@@ -133,7 +133,7 @@ async function renderDashboard() {
                 <div class="stat-value">${summary.warning}</div>
             </div>
             <div class="stat-card critical clickable" onclick="drillDown({status:'critical'})">
-                <div class="stat-label">Критические</div>
+                <div class="stat-label">Ошибки</div>
                 <div class="stat-value">${summary.critical}</div>
             </div>
         </div>
@@ -214,15 +214,38 @@ async function drillDown(filters) {
 
     const data = await api(url);
 
-    // Build title
-    const parts = [];
-    if (filters.dc) parts.push(`ДЦ: ${filters.dc}`);
+    // Build breadcrumbs
+    const statusNames = { passing: 'Норма', warning: 'Предупреждения', critical: 'Ошибки' };
+    const crumbs = [];
+    // Parent crumb (without system_name) — allows going back
+    const parentFilters = {};
+    if (filters.dc) parentFilters.dc = filters.dc;
+    if (filters.status) parentFilters.status = filters.status;
+
     if (filters.status) {
-        const statusNames = { passing: 'Норма', warning: 'Предупреждения', critical: 'Критические' };
-        parts.push(statusNames[filters.status] || filters.status);
+        const parentB64 = btoa(unescape(encodeURIComponent(JSON.stringify({status: filters.status}))));
+        const label = statusNames[filters.status] || filters.status;
+        if (filters.system_name || filters.dc) {
+            crumbs.push(`<span class="breadcrumb-link" onclick="drillDownB64('${parentB64}')">${label}</span>`);
+        } else {
+            crumbs.push(`<span class="breadcrumb-current">${label}</span>`);
+        }
     }
-    if (filters.system_name) parts.push(`ИС: ${filters.system_name}`);
-    const title = parts.length ? parts.join(' / ') : 'Все серверы';
+    if (filters.dc) {
+        const dcOnly = Object.assign({}, parentFilters);
+        delete dcOnly.system_name;
+        const dcB64 = btoa(unescape(encodeURIComponent(JSON.stringify(dcOnly))));
+        if (filters.system_name) {
+            crumbs.push(`<span class="breadcrumb-link" onclick="drillDownB64('${dcB64}')">ДЦ: ${filters.dc}</span>`);
+        } else {
+            crumbs.push(`<span class="breadcrumb-current">ДЦ: ${filters.dc}</span>`);
+        }
+    }
+    if (filters.system_name) {
+        crumbs.push(`<span class="breadcrumb-current">ИС: ${filters.system_name}</span>`);
+    }
+    if (crumbs.length === 0) crumbs.push(`<span class="breadcrumb-current">Все серверы</span>`);
+    const breadcrumbHtml = crumbs.join('<span class="breadcrumb-sep">/</span>');
 
     // Collect IS stats
     const isStat = {};
@@ -244,7 +267,7 @@ async function drillDown(filters) {
     panel.innerHTML = `
         <div class="drilldown-container">
             <div class="drilldown-header">
-                <div class="drilldown-title">${title}</div>
+                <div class="drilldown-title">${breadcrumbHtml}</div>
                 <div class="drilldown-summary">
                     ${data.length} ${plural(data.length, 'сервер', 'сервера', 'серверов')}, ${totalChecks} ${plural(totalChecks, 'проверка', 'проверки', 'проверок')}
                 </div>
