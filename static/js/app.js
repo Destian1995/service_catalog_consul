@@ -857,40 +857,77 @@ async function renderAnalytics() {
             </div>
         </div>
 
-        <div class="section-title" style="margin-top:32px">Информационные системы</div>
-        <div class="systems-panel">
-            ${Object.entries(data.hosts_by_system).map(([sysName, info]) => {
-                const pct = Math.round(info.count / data.monitoring.total * 100);
-                const svcs = data.services_by_system[sysName] || [];
-                return `
-                <div class="system-card">
-                    <div class="system-card-header">
-                        <div class="system-card-icon">${sysName.charAt(0)}</div>
-                        <div class="system-card-info">
-                            <div class="system-card-name">${sysName}</div>
-                            <div class="system-card-meta">
-                                ${info.datacenters.map(dc => `<span class="badge badge-dc">${dc}</span>`).join('')}
-                                ${info.environments.map(e => `<span class="badge badge-env">${e}</span>`).join('')}
+        <div class="section-title" style="margin-top:32px">Информационные системы на мониторинге</div>
+        <div class="monitoring-panel" style="margin-bottom:20px">
+            <div class="mon-hero" style="margin-bottom:16px">
+                <div class="mon-hero-stats">
+                    <div class="mon-stat-big">
+                        <span class="mon-stat-num" style="color:var(--accent-light)">${data.is_monitoring.total_is}</span>
+                        <span class="mon-stat-text">Всего ИС</span>
+                    </div>
+                    <div class="mon-stat-big">
+                        <span class="mon-stat-num" style="color:var(--passing)">${data.is_monitoring.monitored_is}</span>
+                        <span class="mon-stat-text">На мониторинге</span>
+                    </div>
+                    <div class="mon-stat-big">
+                        <span class="mon-stat-num" style="color:var(--warning)">${data.is_monitoring.total_is - data.is_monitoring.monitored_is}</span>
+                        <span class="mon-stat-text">Без мониторинга</span>
+                    </div>
+                    <div class="mon-stat-big">
+                        <span class="mon-stat-num" style="color:#c4b5fd">${data.is_monitoring.coverage_pct}%</span>
+                        <span class="mon-stat-text">Покрытие ИС</span>
+                    </div>
+                </div>
+            </div>
+            <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Нажмите на переключатель, чтобы отметить ИС как поставленную на мониторинг</p>
+            <div class="systems-panel" id="systemsMonPanel">
+                ${Object.entries(data.hosts_by_system).map(([sysName, info]) => {
+                    if (sysName === 'Unassigned') return '';
+                    const pct = Math.round(info.count / data.monitoring.total * 100);
+                    const svcs = data.services_by_system[sysName] || [];
+                    const checked = info.is_monitored;
+                    const covered = info.all_covered;
+                    return `
+                    <div class="system-card ${checked ? 'system-monitored' : ''}" id="sys-card-${sysName.replace(/[^a-zA-Z0-9]/g, '_')}">
+                        <div class="system-card-header">
+                            <label class="mon-toggle" onclick="event.stopPropagation()">
+                                <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleSystemMonitoring('${sysName.replace(/'/g, "\\'")}', this.checked)">
+                                <span class="mon-toggle-slider"></span>
+                            </label>
+                            <div class="system-card-info">
+                                <div class="system-card-name">${sysName}</div>
+                                <div class="system-card-meta">
+                                    ${info.datacenters.map(dc => '<span class="badge badge-dc">' + dc + '</span>').join('')}
+                                    ${info.environments.map(e => '<span class="badge badge-env">' + e + '</span>').join('')}
+                                    ${covered ? '<span class="badge badge-passing" style="font-size:10px">все хосты покрыты</span>' : ''}
+                                </div>
+                            </div>
+                            <div class="system-card-count">
+                                <span class="system-count-num">${info.count}</span>
+                                <span class="system-count-label">${plural(info.count, 'хост', 'хоста', 'хостов')}</span>
                             </div>
                         </div>
-                        <div class="system-card-count">
-                            <span class="system-count-num">${info.count}</span>
-                            <span class="system-count-label">${plural(info.count, 'хост', 'хоста', 'хостов')}</span>
+                        <div class="system-card-bar">
+                            <div class="system-card-fill" style="width:${pct}%"></div>
                         </div>
-                    </div>
-                    <div class="system-card-bar"><div class="system-card-fill" style="width:${pct}%"></div></div>
-                    <div class="system-card-details">
-                        <div class="system-detail-group">
-                            <span class="system-detail-label">Серверы</span>
-                            <div class="system-detail-tags">${info.servers.map(s => `<span class="tag">${s}</span>`).join('')}</div>
+                        <div class="system-card-mon-stats">
+                            ${info.mon_full > 0 ? '<span class="inst-badge inst-passing">полный: ' + info.mon_full + '</span>' : ''}
+                            ${info.mon_basic > 0 ? '<span class="inst-badge inst-warning">базовый: ' + info.mon_basic + '</span>' : ''}
+                            ${info.mon_none > 0 ? '<span class="inst-badge" style="background:rgba(100,116,139,0.1);border:1px solid rgba(100,116,139,0.2);color:var(--text-muted)">нет: ' + info.mon_none + '</span>' : ''}
                         </div>
-                        <div class="system-detail-group">
-                            <span class="system-detail-label">Сервисы</span>
-                            <div class="system-detail-tags">${svcs.map(s => `<span class="tag ${getTagClass(s)}">${s}</span>`).join('')}</div>
+                        <div class="system-card-details">
+                            <div class="system-detail-group">
+                                <span class="system-detail-label">Серверы</span>
+                                <div class="system-detail-tags">${info.servers.map(s => '<span class="tag">' + s + '</span>').join('')}</div>
+                            </div>
+                            <div class="system-detail-group">
+                                <span class="system-detail-label">Сервисы</span>
+                                <div class="system-detail-tags">${svcs.map(s => '<span class="tag ' + getTagClass(s) + '">' + s + '</span>').join('')}</div>
+                            </div>
                         </div>
-                    </div>
-                </div>`;
-            }).join('')}
+                    </div>`;
+                }).join('')}
+            </div>
         </div>
 
         <div class="charts-grid" style="margin-top:24px">
@@ -1213,6 +1250,23 @@ function switchExpandTab(tabEl, panelId) {
 }
 
 // ─── Загрузка индикатора режима ───
+async function toggleSystemMonitoring(sysName, isChecked) {
+    try {
+        await fetch('/api/admin/toggle-monitored-system', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({system_name: sysName})
+        });
+        // Update card visually
+        const cardId = 'sys-card-' + sysName.replace(/[^a-zA-Z0-9]/g, '_');
+        const card = document.getElementById(cardId);
+        if (card) {
+            card.classList.toggle('system-monitored', isChecked);
+        }
+    } catch(e) {
+        console.error('Toggle monitoring error:', e);
+    }
+}
+
 async function loadModeIndicator() {
     try {
         const data = await api('/api/mode');

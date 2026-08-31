@@ -452,23 +452,39 @@ def api_analytics():
         "servers_none": monitoring_levels["none"],
     }
 
-    # Hosts by IS
+    # Hosts by IS + monitoring level per IS
+    cfg = load_config()
+    monitored_systems = set(cfg.get("monitored_systems", []))
+    full_servers = set(monitoring_levels["full"])
+
     hosts_by_system = {}
     for n in nodes:
         sys_name = n["Meta"].get("system_name", "Unassigned")
         if sys_name == "-": sys_name = "Unassigned"
         if sys_name not in hosts_by_system:
-            hosts_by_system[sys_name] = {"count": 0, "servers": [], "dcs": set(), "envs": set()}
+            hosts_by_system[sys_name] = {"count": 0, "servers": [], "dcs": set(), "envs": set(),
+                                          "full": 0, "basic": 0, "none": 0}
         hosts_by_system[sys_name]["count"] += 1
         hosts_by_system[sys_name]["servers"].append(n["Node"])
         hosts_by_system[sys_name]["dcs"].add(n["Datacenter"])
         hosts_by_system[sys_name]["envs"].add(n["Meta"].get("environment", "unknown"))
+        # Per-IS monitoring level
+        if n["Node"] in full_servers:
+            hosts_by_system[sys_name]["full"] += 1
+        elif n["Node"] in set(monitoring_levels["basic"]):
+            hosts_by_system[sys_name]["basic"] += 1
+        else:
+            hosts_by_system[sys_name]["none"] += 1
 
     hosts_by_system_out = {}
     for sys_name, info in sorted(hosts_by_system.items(), key=lambda x: -x[1]["count"]):
+        all_monitored = (info["full"] + info["basic"]) == info["count"] and info["count"] > 0
         hosts_by_system_out[sys_name] = {
             "count": info["count"], "servers": info["servers"],
             "datacenters": sorted(info["dcs"]), "environments": sorted(info["envs"]),
+            "mon_full": info["full"], "mon_basic": info["basic"], "mon_none": info["none"],
+            "is_monitored": sys_name in monitored_systems,
+            "all_covered": all_monitored,
         }
 
     # Services per system
@@ -485,6 +501,19 @@ def api_analytics():
         for sys_name in hosts_by_system:
             services_by_system[sys_name] = []
 
+    # IS monitoring summary
+    total_is = len([s for s in hosts_by_system if s != "Unassigned"])
+    monitored_is_count = len([s for s in hosts_by_system_out if hosts_by_system_out[s]["is_monitored"]])
+    fully_covered_is = len([s for s in hosts_by_system_out
+                            if hosts_by_system_out[s]["all_covered"] and s != "Unassigned"])
+
+    is_monitoring_summary = {
+        "total_is": total_is,
+        "monitored_is": monitored_is_count,
+        "fully_covered_is": fully_covered_is,
+        "coverage_pct": round(monitored_is_count / total_is * 100) if total_is else 0,
+    }
+
     return jsonify({
         "services_by_category": svc_by_category, "servers_by_dc": servers_by_dc,
         "servers_by_env": servers_by_env, "servers_by_os": servers_by_os,
@@ -493,6 +522,7 @@ def api_analytics():
         "health_by_dc": health_by_dc, "monitoring": monitoring_summary,
         "monitoring_by_dc": monitoring_by_dc, "monitoring_by_env": monitoring_by_env,
         "hosts_by_system": hosts_by_system_out, "services_by_system": services_by_system,
+        "is_monitoring": is_monitoring_summary,
     })
 
 # ──────────────────────────────────────
@@ -627,6 +657,40 @@ def admin_delete_cluster(cluster_id):
     cfg.get("clusters", {}).pop(cluster_id, None)
     save_config(cfg)
     return jsonify({"ok": True})
+
+@app.route("/api/admin/monitored-systems", methods=["GET"])
+def admin_get_monitored_systems():
+    cfg = load_config()
+    return jsonify(cfg.get("monitored_systems", []))
+
+@app.route("/api/admin/monitored-systems", methods=["POST"])
+def admin_set_monitored_systems():
+    """Save list of IS names marked as fully monitored."""
+    pwd = request.json.get("password", "")
+    cfg = load_config()
+    if pwd != cfg.get("app", {}).get("admin_password", "admin"):
+        return jsonify({"error": "Неверный пароль"}), 403
+    systems = request.json.get("systems", [])
+    cfg["monitored_systems"] = sorted(set(systems))
+    save_config(cfg)
+    return jsonify({"ok": True, "systems": cfg["monitored_systems"]})
+
+@app.route("/api/admin/toggle-monitored-system", methods=["POST"])
+def admin_toggle_monitored_system():
+    """Toggle a single IS in monitored list (no password for quick toggle)."""
+    system_name = request.json.get("system_name", "")
+    if not system_name:
+        return jsonify({"error": "system_name required"}), 400
+    cfg = load_config()
+    monitored = set(cfg.get("monitored_systems", []))
+    if system_name in monitored:
+        monitored.discard(system_name)
+    else:
+        monitored.add(system_name)
+    cfg["monitored_systems"] = sorted(monitored)
+    save_config(cfg)
+    return jsonify({"ok": True, "is_monitored": system_name in monitored,
+                    "systems": cfg["monitored_systems"]})
 
 # ──────────────────────────────────────
 # Serve SPA + Admin
