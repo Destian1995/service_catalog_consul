@@ -98,11 +98,13 @@ async function renderDashboard() {
     const el = $('#view-dashboard');
     el.innerHTML = LOADER;
 
-    const [summary, nodes, services] = await Promise.all([
+    const [summary, nodes, services, analytics] = await Promise.all([
         api('/api/health/summary'),
         api('/api/nodes'),
         api('/api/services'),
+        api('/api/analytics'),
     ]);
+    const isMon = analytics.is_monitoring || {};
 
     const dcs = {};
     nodes.forEach(n => {
@@ -120,9 +122,9 @@ async function renderDashboard() {
                 <div class="stat-label">Всего серверов</div>
                 <div class="stat-value">${summary.total_nodes}</div>
             </div>
-            <div class="stat-card accent clickable" onclick="navigate('services')">
-                <div class="stat-label">Всего сервисов</div>
-                <div class="stat-value">${summary.total_services}</div>
+            <div class="stat-card accent clickable" onclick="navigate('analytics')">
+                <div class="stat-label">ИС на мониторинге</div>
+                <div class="stat-value">${isMon.monitored_is || 0}<span style="font-size:16px;color:var(--text-muted);font-weight:400"> / ${isMon.total_is || 0}</span></div>
             </div>
             <div class="stat-card passing clickable" onclick="drillDown({status:'passing'})">
                 <div class="stat-label">Проверки ОК</div>
