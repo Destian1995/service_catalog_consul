@@ -81,6 +81,24 @@
             <div id="clustersContainer"></div>
         </div>
 
+        <!-- Import from JSON file -->
+        <div class="admin-section">
+            <div class="admin-section-title">Импорт из JSON-файла</div>
+            <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">
+                Загрузите файл <code style="color:var(--accent-light)">consul_manager_config.json</code> — кластеры и дата-центры будут добавлены к текущей конфигурации.
+                Поддерживаемые форматы: полный конфиг (с полем <code style="color:var(--accent-light)">clusters</code>) или старый формат (<code style="color:var(--accent-light)">cluster_b</code> и т.д.).
+            </p>
+            <div class="form-row">
+                <label class="btn btn-secondary" style="cursor:pointer">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;margin-right:6px"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    Выбрать файл
+                    <input type="file" accept=".json" id="importFile" onchange="importJsonFile(this)" style="display:none">
+                </label>
+                <span id="importStatus" style="font-size:13px;color:var(--text-muted)"></span>
+            </div>
+            <div id="importPreview" style="display:none;margin-top:12px"></div>
+        </div>
+
         <!-- Test connection -->
         <div class="admin-section">
             <div class="admin-section-title">Проверить подключение</div>
@@ -268,6 +286,94 @@
         el.textContent = msg;
         document.body.appendChild(el);
         setTimeout(() => el.remove(), 3000);
+    }
+
+    function importJsonFile(input) {
+        const file = input.files[0];
+        if (!file) return;
+        const statusEl = document.getElementById('importStatus');
+        const previewEl = document.getElementById('importPreview');
+        statusEl.textContent = 'Чтение файла...';
+        previewEl.style.display = 'none';
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const data = JSON.parse(e.target.result);
+                const imported = parseImportedConfig(data);
+                if (imported.length === 0) {
+                    statusEl.innerHTML = '<span style="color:var(--critical)">Не найдено кластеров в файле</span>';
+                    return;
+                }
+                const word = imported.length === 1 ? 'кластер' : imported.length < 5 ? 'кластера' : 'кластеров';
+                statusEl.innerHTML = '<span style="color:var(--passing)">Найдено ' + imported.length + ' ' + word + '</span>';
+                previewEl.style.display = 'block';
+                previewEl.innerHTML =
+                    '<div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px">' +
+                    imported.map(function(cl) {
+                        return '<div style="margin-bottom:8px"><strong style="color:var(--text-primary)">' + cl.name + '</strong>' +
+                            '<span style="color:var(--text-muted);font-size:12px"> — ' + cl.datacenters.length + ' ДЦ</span>' +
+                            '<div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap">' +
+                            cl.datacenters.map(function(dc) { return '<span class="tag">' + dc.name + ' (' + dc.host + ')</span>'; }).join('') +
+                            '</div></div>';
+                    }).join('') +
+                    '</div>' +
+                    '<div style="display:flex;gap:8px">' +
+                    '<button class="btn btn-primary" onclick="applyImport()">Применить</button>' +
+                    '<button class="btn btn-secondary" onclick="document.getElementById(\'importPreview\').style.display=\'none\';document.getElementById(\'importStatus\').textContent=\'\'">Отмена</button>' +
+                    '</div>';
+                window._pendingImport = imported;
+            } catch(err) {
+                statusEl.innerHTML = '<span style="color:var(--critical)">Ошибка JSON: ' + err.message + '</span>';
+            }
+        };
+        reader.readAsText(file);
+        input.value = '';
+    }
+
+    function parseImportedConfig(data) {
+        var clusters = [];
+        // Format 1: full config with "clusters" key
+        if (data.clusters) {
+            for (var id in data.clusters) {
+                var cl = data.clusters[id];
+                clusters.push({
+                    name: cl.name || id,
+                    datacenters: (cl.datacenters || []).map(function(dc) {
+                        return { name: dc.name||'', host: dc.host||'', token: dc.token||'',
+                                 scheme: dc.scheme||'https', verify_ssl: dc.verify_ssl !== undefined ? dc.verify_ssl : false };
+                    })
+                });
+            }
+            return clusters;
+        }
+        // Format 2: old format — top-level keys like "cluster_b" with "datacenters"
+        for (var key in data) {
+            var val = data[key];
+            if (val && typeof val === 'object' && val.datacenters) {
+                clusters.push({
+                    name: val.name || key,
+                    datacenters: (val.datacenters || []).map(function(dc) {
+                        return { name: dc.name||'', host: dc.host||'', token: dc.token||'',
+                                 scheme: dc.scheme||'https', verify_ssl: dc.verify_ssl !== undefined ? dc.verify_ssl : false };
+                    })
+                });
+            }
+        }
+        return clusters;
+    }
+
+    function applyImport() {
+        if (!window._pendingImport) return;
+        if (!config.clusters) config.clusters = {};
+        window._pendingImport.forEach(function(cl) {
+            config.clusters[cl.name] = cl;
+        });
+        window._pendingImport = null;
+        document.getElementById('importPreview').style.display = 'none';
+        document.getElementById('importStatus').innerHTML =
+            '<span style="color:var(--passing)">Кластеры добавлены. Нажмите «Сохранить конфигурацию»</span>';
+        renderClusters();
     }
 
     loadConfig();
