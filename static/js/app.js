@@ -5,6 +5,7 @@
 
 const API = '';
 let currentView = 'dashboard';
+const _drillCache = {};
 const LOADER = `<div class="loading-spinner"><div class="loader-ring"><svg class="loader-svg" viewBox="0 0 64 64"><circle class="loader-track" cx="32" cy="32" r="28"/><circle class="loader-arc" cx="32" cy="32" r="28"/><path class="loader-pulse-bg" d="M16 32h6l3-8 7 16 3-8h13"/><path class="loader-pulse" d="M16 32h6l3-8 7 16 3-8h13"/></svg></div></div>`;
 
 // ─── Helpers ───
@@ -87,6 +88,8 @@ function onGlobalSearch(val) {
 }
 
 async function refreshData() {
+    // Clear drill-down cache on manual refresh
+    Object.keys(_drillCache).forEach(k => delete _drillCache[k]);
     navigate(currentView);
 }
 
@@ -186,7 +189,7 @@ async function renderDashboard() {
 }
 
 // ═══════════════════════════════════════
-// Dashboard Drill-Down
+// Dashboard Drill-Down (with client cache)
 // ═══════════════════════════════════════
 
 function drillDownB64(b64) {
@@ -198,23 +201,29 @@ async function drillDown(filters) {
     const panel = document.getElementById('drillDownPanel');
     if (!panel) return;
 
+    const key = JSON.stringify(filters);
+
     // Toggle off if same filter clicked again
-    if (panel.style.display !== 'none' && panel.dataset.filter === JSON.stringify(filters)) {
+    if (panel.style.display !== 'none' && panel.dataset.filter === key) {
         panel.style.display = 'none';
         return;
     }
-    panel.dataset.filter = JSON.stringify(filters);
+    panel.dataset.filter = key;
     panel.style.display = 'block';
-    panel.innerHTML = LOADER;
-    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-    // Build query
-    let url = '/api/health/details?';
-    if (filters.dc) url += `dc=${encodeURIComponent(filters.dc)}&`;
-    if (filters.status) url += `status=${encodeURIComponent(filters.status)}&`;
-    if (filters.system_name) url += `system_name=${encodeURIComponent(filters.system_name)}&`;
-
-    const data = await api(url);
+    let data;
+    if (_drillCache[key]) {
+        data = _drillCache[key];
+    } else {
+        panel.innerHTML = LOADER;
+        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        let url = '/api/health/details?';
+        if (filters.dc) url += `dc=${encodeURIComponent(filters.dc)}&`;
+        if (filters.status) url += `status=${encodeURIComponent(filters.status)}&`;
+        if (filters.system_name) url += `system_name=${encodeURIComponent(filters.system_name)}&`;
+        data = await api(url);
+        _drillCache[key] = data;
+    }
 
     // Build breadcrumbs
     const statusNames = { passing: 'Норма', warning: 'Предупреждения', critical: 'Ошибки' };
