@@ -139,16 +139,18 @@ async function renderDashboard() {
 
         <div class="section-title">Серверы по дата-центрам</div>
         <div class="stats-grid" style="margin-bottom:32px">
-            ${Object.entries(dcs).map(([dc, data]) => `
-                <div class="stat-card accent clickable" onclick="drillDown({dc:'${dc}'})">
+            ${Object.entries(dcs).map(([dc, data]) => {
+                const dcSafe = btoa(unescape(encodeURIComponent(JSON.stringify({dc}))));
+                return `
+                <div class="stat-card accent clickable" onclick="drillDownB64('${dcSafe}')">
                     <div class="stat-label">${dc}</div>
                     <div class="stat-value">${data.total}</div>
                     <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
                         ${Object.entries(data.envs).map(([env, cnt]) =>
-                            `<span class="tag">${env}: ${cnt}</span>`).join('')}
+                            '<span class="tag">' + env + ': ' + cnt + '</span>').join('')}
                     </div>
-                </div>
-            `).join('')}
+                </div>`;
+            }).join('')}
         </div>
 
         <!-- Drill-down panel -->
@@ -183,6 +185,11 @@ async function renderDashboard() {
 // ═══════════════════════════════════════
 // Dashboard Drill-Down
 // ═══════════════════════════════════════
+
+function drillDownB64(b64) {
+    const filters = JSON.parse(decodeURIComponent(escape(atob(b64))));
+    drillDown(filters);
+}
 
 async function drillDown(filters) {
     const panel = document.getElementById('drillDownPanel');
@@ -248,22 +255,29 @@ async function drillDown(filters) {
             ${allIS.length > 1 ? `
             <div class="drilldown-is-filter">
                 <span class="filter-label">ИС</span>
-                ${allIS.map(is => `<button class="filter-chip" onclick="drillDown({...${JSON.stringify(filters)}, system_name:'${is}'})">${is}</button>`).join('')}
+                ${allIS.map(is => {
+                    const merged = Object.assign({}, filters, {system_name: is});
+                    const safe = btoa(unescape(encodeURIComponent(JSON.stringify(merged))));
+                    return `<button class="filter-chip" onclick="drillDownB64('${safe}')">${is}</button>`;
+                }).join('')}
             </div>` : ''}
 
             ${Object.keys(isStat).length > 1 ? `
             <div class="drilldown-is-cards">
-                ${Object.entries(isStat).sort((a,b) => b[1].servers - a[1].servers).map(([is, st]) => `
-                    <div class="drilldown-is-card clickable" onclick="drillDown({...${JSON.stringify(filters)}, system_name:'${is}'})">
+                ${Object.entries(isStat).sort((a,b) => b[1].servers - a[1].servers).map(([is, st]) => {
+                    const merged = Object.assign({}, filters, {system_name: is});
+                    const safe = btoa(unescape(encodeURIComponent(JSON.stringify(merged))));
+                    return `
+                    <div class="drilldown-is-card clickable" onclick="drillDownB64('${safe}')">
                         <div class="drilldown-is-name">${is}</div>
                         <div class="drilldown-is-stats">
                             <span>${st.servers} ${plural(st.servers, 'сервер', 'сервера', 'серверов')}</span>
-                            ${st.passing > 0 ? `<span class="inst-badge inst-passing">${st.passing}</span>` : ''}
-                            ${st.warning > 0 ? `<span class="inst-badge inst-warning">${st.warning}</span>` : ''}
-                            ${st.critical > 0 ? `<span class="inst-badge inst-critical">${st.critical}</span>` : ''}
+                            ${st.passing > 0 ? '<span class="inst-badge inst-passing">' + st.passing + '</span>' : ''}
+                            ${st.warning > 0 ? '<span class="inst-badge inst-warning">' + st.warning + '</span>' : ''}
+                            ${st.critical > 0 ? '<span class="inst-badge inst-critical">' + st.critical + '</span>' : ''}
                         </div>
-                    </div>
-                `).join('')}
+                    </div>`;
+                }).join('')}
             </div>` : ''}
 
             <div class="table-wrapper" style="margin-top:12px">
