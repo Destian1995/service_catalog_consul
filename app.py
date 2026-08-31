@@ -449,22 +449,43 @@ def api_analytics():
             if env not in monitoring_by_env: monitoring_by_env[env] = {"advanced": 0, "basic": 0, "none": 0}
             monitoring_by_env[env][level] += 1
     else:
-        # Live mode — classify by metadata fields (fast, no per-node API calls)
+        # Live mode — build node→services map from catalog, then classify
+        from consul_client import ConsulAggregator
+        agg = ConsulAggregator(load_config())
+        # Get all services with their health (includes node info)
+        node_svc_map = {}  # node_name -> set of service names
+        all_svc_catalog = agg.get_all_services()
+        # For monitoring services only, fetch which nodes they run on
+        mon_svc_names = set()
+        for svc in all_svc_catalog:
+            svc_lower = svc["name"].lower().replace("-", "_")
+            # Check if any known monitoring service name is substring
+            for known in all_mon_svcs:
+                if known.replace("-", "_") == svc_lower or svc_lower.startswith(known.replace("-", "_")):
+                    mon_svc_names.add(svc["name"])
+                    break
+        log.info(f"Monitoring services found in catalog: {mon_svc_names}")
+
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        def _fetch_svc_nodes(svc_name):
+            instances = agg.get_service_detail(svc_name)
+            return [(inst.get("node", {}).get("Node", ""), svc_name) for inst in instances]
+
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            futures = {pool.submit(_fetch_svc_nodes, s): s for s in mon_svc_names}
+            for f in as_completed(futures):
+                try:
+                    for node_name, svc_name in f.result():
+                        if node_name:
+                            node_svc_map.setdefault(node_name, set()).add(svc_name)
+                except Exception:
+                    pass
+
         for n in nodes:
-            raw = n.get("_raw_meta", {})
-            # Count system_dependencies_* fields that have real values
-            dep_keys = [k for k in raw if k.startswith("system_dependencies_")]
-            has_monitoring_dep = raw.get("system_dependencies_monitoring", "").lower() not in ("", "false", "0", "no")
-            non_empty_deps = sum(1 for k in dep_keys if raw.get(k, "").strip() and
-                                 raw.get(k, "").lower() not in ("false", "0", "no"))
-            if has_monitoring_dep or non_empty_deps > 1:
-                level = "advanced"
-            elif non_empty_deps >= 1 or any(raw.get(k, "") for k in
-                    ["consul-version"] if raw.get(k, "").strip()):
-                level = "basic"
-            else:
-                level = "none"
-            monitoring_levels[level].append(n["Node"])
+            node_name = n["Node"]
+            node_svcs = node_svc_map.get(node_name, set())
+            level = _classify_host(node_svcs)
+            monitoring_levels[level].append(node_name)
             dc = n["Datacenter"]
             if dc not in monitoring_by_dc: monitoring_by_dc[dc] = {"advanced": 0, "basic": 0, "none": 0}
             monitoring_by_dc[dc][level] += 1
