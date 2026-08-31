@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Админка — Каталог сервисов</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        body { justify-content: center; padding: 40px 20px; }
+        .admin-wrap { max-width: 900px; width: 100%; }
+        .admin-header { display:flex; align-items:center; gap:16px; margin-bottom:32px; }
+        .admin-header h1 { font-size:24px; font-weight:700; }
+        .admin-back { color:var(--text-muted); text-decoration:none; font-size:13px; display:inline-flex; align-items:center; gap:4px; }
+        .admin-back:hover { color:var(--text-primary); }
+        .admin-back svg { width:16px; height:16px; }
+
+        .admin-section { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:24px; margin-bottom:20px; }
+        .admin-section-title { font-size:15px; font-weight:600; margin-bottom:16px; display:flex; align-items:center; justify-content:space-between; }
+
+        .form-row { display:flex; gap:12px; margin-bottom:12px; align-items:center; flex-wrap:wrap; }
+        .form-label { font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; min-width:80px; }
+        .form-input { background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-xs); color:var(--text-primary); font-family:inherit; font-size:13px; padding:8px 12px; outline:none; flex:1; min-width:200px; }
+        .form-input:focus { border-color:var(--accent-border); }
+        .form-input-sm { min-width:100px; flex:0.5; }
+
+        .btn { padding:8px 20px; border-radius:var(--radius-xs); font-family:inherit; font-size:13px; font-weight:600; cursor:pointer; border:1px solid var(--border); transition:all 0.2s; }
+        .btn-primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+        .btn-primary:hover { background:var(--accent-light); }
+        .btn-danger { background:var(--critical-bg); border-color:var(--critical-border); color:var(--critical); }
+        .btn-danger:hover { background:rgba(239,68,68,0.2); }
+        .btn-secondary { background:var(--bg-card); color:var(--text-secondary); }
+        .btn-secondary:hover { border-color:var(--border-light); color:var(--text-primary); }
+        .btn-success { background:var(--passing-bg); border-color:var(--passing-border); color:var(--passing); }
+
+        .mode-switch { display:flex; gap:0; border-radius:var(--radius-sm); overflow:hidden; border:1px solid var(--border); }
+        .mode-btn { padding:10px 24px; font-size:14px; font-weight:600; cursor:pointer; background:var(--bg-card); color:var(--text-muted); border:none; font-family:inherit; transition:all 0.2s; }
+        .mode-btn.active { background:var(--accent); color:#fff; }
+        .mode-btn:hover:not(.active) { background:var(--bg-card-hover); color:var(--text-primary); }
+
+        .cluster-card { background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px; margin-bottom:12px; }
+        .cluster-name { font-size:15px; font-weight:600; margin-bottom:12px; display:flex; align-items:center; justify-content:space-between; }
+        .dc-row { display:flex; gap:8px; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+        .dc-row:last-child { border-bottom:none; }
+
+        .toast { position:fixed; bottom:24px; right:24px; padding:12px 20px; border-radius:var(--radius-sm); font-size:13px; font-weight:500; z-index:999; animation:fadeIn 0.2s ease; }
+        .toast-ok { background:var(--passing-bg); border:1px solid var(--passing-border); color:var(--passing); }
+        .toast-err { background:var(--critical-bg); border:1px solid var(--critical-border); color:var(--critical); }
+
+        .pwd-overlay { position:fixed; top:0;left:0;right:0;bottom:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:200; }
+        .pwd-box { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:28px; width:360px; }
+        .pwd-box h3 { margin-bottom:16px; font-size:16px; }
+    </style>
+</head>
+<body>
+    <div class="admin-wrap">
+        <div class="admin-header">
+            <a href="/" class="admin-back">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                На портал
+            </a>
+            <h1>Настройки подключения</h1>
+        </div>
+
+        <!-- Mode switch -->
+        <div class="admin-section">
+            <div class="admin-section-title">Режим работы</div>
+            <div class="mode-switch" id="modeSwitch">
+                <button class="mode-btn" data-mode="test" onclick="setMode('test')">Тестовый</button>
+                <button class="mode-btn" data-mode="live" onclick="setMode('live')">Боевой (Consul API)</button>
+            </div>
+            <p style="margin-top:10px;font-size:12px;color:var(--text-muted)" id="modeHint"></p>
+        </div>
+
+        <!-- Clusters -->
+        <div class="admin-section">
+            <div class="admin-section-title">
+                Кластеры Consul
+                <button class="btn btn-secondary" onclick="addClusterUI()">+ Добавить кластер</button>
+            </div>
+            <div id="clustersContainer"></div>
+        </div>
+
+        <!-- Test connection -->
+        <div class="admin-section">
+            <div class="admin-section-title">Проверить подключение</div>
+            <div class="form-row">
+                <input class="form-input" id="testHost" placeholder="consul-host.example.com">
+                <input class="form-input form-input-sm" id="testToken" placeholder="Токен" type="password">
+                <select class="filter-select" id="testScheme"><option value="https">HTTPS</option><option value="http">HTTP</option></select>
+                <button class="btn btn-secondary" onclick="testConnection()">Проверить</button>
+            </div>
+            <div id="testResult" style="margin-top:8px;font-size:13px"></div>
+        </div>
+
+        <!-- Save -->
+        <div style="display:flex;gap:12px;justify-content:flex-end">
+            <button class="btn btn-primary" onclick="saveAll()">Сохранить конфигурацию</button>
+        </div>
+    </div>
+
+    <!-- Password modal -->
+    <div class="pwd-overlay" id="pwdModal" style="display:none">
+        <div class="pwd-box">
+            <h3>Введите пароль администратора</h3>
+            <div class="form-row">
+                <input class="form-input" id="adminPwd" type="password" placeholder="Пароль"
+                       onkeydown="if(event.key==='Enter')confirmPwd()">
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+                <button class="btn btn-secondary" onclick="cancelPwd()">Отмена</button>
+                <button class="btn btn-primary" onclick="confirmPwd()">ОК</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    let config = {};
+    let pendingAction = null;
+
+    async function loadConfig() {
+        const r = await fetch('/api/admin/config');
+        config = await r.json();
+        renderMode();
+        renderClusters();
+    }
+
+    function renderMode() {
+        const mode = config.mode || 'test';
+        document.querySelectorAll('.mode-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.mode === mode);
+        });
+        document.getElementById('modeHint').textContent =
+            mode === 'test' ? 'Используются тестовые данные (демо)' : 'Данные загружаются из реального Consul API';
+    }
+
+    function renderClusters() {
+        const container = document.getElementById('clustersContainer');
+        const clusters = config.clusters || {};
+        if (Object.keys(clusters).length === 0) {
+            container.innerHTML = '<p style="color:var(--text-muted);font-size:13px">Нет настроенных кластеров</p>';
+            return;
+        }
+        container.innerHTML = Object.entries(clusters).map(([id, cluster]) => `
+            <div class="cluster-card">
+                <div class="cluster-name">
+                    <span>${cluster.name || id}</span>
+                    <button class="btn btn-danger" style="font-size:11px;padding:4px 10px" onclick="deleteCluster('${id}')">Удалить</button>
+                </div>
+                ${(cluster.datacenters || []).map((dc, i) => `
+                    <div class="dc-row">
+                        <input class="form-input form-input-sm" value="${dc.name}" placeholder="Имя ДЦ"
+                               onchange="updateDc('${id}', ${i}, 'name', this.value)">
+                        <input class="form-input" value="${dc.host}" placeholder="Хост"
+                               onchange="updateDc('${id}', ${i}, 'host', this.value)">
+                        <input class="form-input form-input-sm" value="${dc.token}" placeholder="Токен" type="password"
+                               onchange="updateDc('${id}', ${i}, 'token', this.value)">
+                        <select class="filter-select" onchange="updateDc('${id}', ${i}, 'scheme', this.value)">
+                            <option value="https" ${dc.scheme !== 'http' ? 'selected' : ''}>HTTPS</option>
+                            <option value="http" ${dc.scheme === 'http' ? 'selected' : ''}>HTTP</option>
+                        </select>
+                        <button class="btn btn-danger" style="font-size:11px;padding:4px 8px" onclick="removeDc('${id}', ${i})">×</button>
+                    </div>
+                `).join('')}
+                <button class="btn btn-secondary" style="margin-top:8px;font-size:11px;padding:4px 12px" onclick="addDc('${id}')">+ Дата-центр</button>
+            </div>
+        `).join('');
+    }
+
+    function updateDc(clusterId, dcIndex, field, value) {
+        config.clusters[clusterId].datacenters[dcIndex][field] = value;
+    }
+
+    function removeDc(clusterId, dcIndex) {
+        config.clusters[clusterId].datacenters.splice(dcIndex, 1);
+        renderClusters();
+    }
+
+    function addDc(clusterId) {
+        config.clusters[clusterId].datacenters.push({name: '', host: '', token: '', scheme: 'https', verify_ssl: true});
+        renderClusters();
+    }
+
+    function addClusterUI() {
+        const name = prompt('Имя нового кластера:');
+        if (!name) return;
+        if (!config.clusters) config.clusters = {};
+        config.clusters[name] = {name: name, datacenters: [{name: '', host: '', token: '', scheme: 'https', verify_ssl: true}]};
+        renderClusters();
+    }
+
+    function deleteCluster(id) {
+        if (!confirm(`Удалить кластер "${id}"?`)) return;
+        delete config.clusters[id];
+        renderClusters();
+    }
+
+    function setMode(mode) {
+        config.mode = mode;
+        renderMode();
+    }
+
+    async function testConnection() {
+        const host = document.getElementById('testHost').value;
+        const token = document.getElementById('testToken').value;
+        const scheme = document.getElementById('testScheme').value;
+        const el = document.getElementById('testResult');
+        el.innerHTML = '<span style="color:var(--text-muted)">Проверяю...</span>';
+        try {
+            const r = await fetch('/api/admin/test-connection', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({host, token, scheme, verify_ssl: false})
+            });
+            const data = await r.json();
+            if (data.ok) {
+                el.innerHTML = `<span style="color:var(--passing)">Подключение успешно. Leader: ${data.leader}</span>`;
+            } else {
+                el.innerHTML = `<span style="color:var(--critical)">Ошибка: ${data.error}</span>`;
+            }
+        } catch(e) {
+            el.innerHTML = `<span style="color:var(--critical)">Ошибка: ${e.message}</span>`;
+        }
+    }
+
+    function saveAll() {
+        pendingAction = async (pwd) => {
+            // Save mode
+            await fetch('/api/admin/mode', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({password: pwd, mode: config.mode})
+            });
+            // Save config
+            const r = await fetch('/api/admin/config', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({password: pwd, config: config})
+            });
+            const data = await r.json();
+            if (data.error) { toast(data.error, 'err'); return; }
+            toast('Конфигурация сохранена');
+            loadConfig();
+        };
+        showPwd();
+    }
+
+    function showPwd() {
+        document.getElementById('pwdModal').style.display = 'flex';
+        document.getElementById('adminPwd').value = '';
+        document.getElementById('adminPwd').focus();
+    }
+
+    function cancelPwd() {
+        document.getElementById('pwdModal').style.display = 'none';
+        pendingAction = null;
+    }
+
+    async function confirmPwd() {
+        const pwd = document.getElementById('adminPwd').value;
+        document.getElementById('pwdModal').style.display = 'none';
+        if (pendingAction) {
+            await pendingAction(pwd);
+            pendingAction = null;
+        }
+    }
+
+    function toast(msg, type = 'ok') {
+        const el = document.createElement('div');
+        el.className = `toast toast-${type}`;
+        el.textContent = msg;
+        document.body.appendChild(el);
+        setTimeout(() => el.remove(), 3000);
+    }
+
+    loadConfig();
+    </script>
+</body>
+</html>

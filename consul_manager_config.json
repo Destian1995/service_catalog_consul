@@ -1,0 +1,37 @@
+{
+    "mode": "test",
+    "clusters": {
+        "infra-prod": {
+            "name": "infra-prod",
+            "datacenters": [
+                {
+                    "name": "1xx",
+                    "host": "consul-1xx.k8s-infra-prod.k8s.aton.global",
+                    "token": "",
+                    "scheme": "https",
+                    "verify_ssl": true
+                },
+                {
+                    "name": "2xx",
+                    "host": "consul-2xx.k8s-infra-prod.k8s.aton.global",
+                    "token": "",
+                    "scheme": "https",
+                    "verify_ssl": true
+                },
+                {
+                    "name": "92xx",
+                    "host": "consul-92xx.k8s-infra-prod.k8s.aton.global",
+                    "token": "",
+                    "scheme": "https",
+                    "verify_ssl": true
+                }
+            ]
+        }
+    },
+    "app": {
+        "host": "0.0.0.0",
+        "port": 5000,
+        "secret_key": "change-me-in-production",
+        "admin_password": "admin"
+    }
+}
