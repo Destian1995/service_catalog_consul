@@ -5,6 +5,7 @@
 
 const API = '';
 let currentView = 'dashboard';
+const LOADER = `<div class="loading-spinner"><svg class="spinner" viewBox="0 0 80 32"><path class="spinner-pulse-bg" d="M4 16h12l4-10 8 20 4-10h12l4-10 8 20 4-10H72"/><path class="spinner-pulse" d="M4 16h12l4-10 8 20 4-10h12l4-10 8 20 4-10H72"/></svg></div>`;
 
 // ─── Helpers ───
 
@@ -95,7 +96,7 @@ async function refreshData() {
 
 async function renderDashboard() {
     const el = $('#view-dashboard');
-    el.innerHTML = `<div class="loading-spinner"><div class="spinner"></div></div>`;
+    el.innerHTML = LOADER;
 
     const [summary, nodes, services] = await Promise.all([
         api('/api/health/summary'),
@@ -202,7 +203,7 @@ async function drillDown(filters) {
     }
     panel.dataset.filter = JSON.stringify(filters);
     panel.style.display = 'block';
-    panel.innerHTML = `<div class="loading-spinner"><div class="spinner"></div></div>`;
+    panel.innerHTML = LOADER;
     panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
     // Build query
@@ -339,7 +340,7 @@ async function drillDown(filters) {
 
 async function renderServers() {
     const el = $('#view-servers');
-    el.innerHTML = `<div class="loading-spinner"><div class="spinner"></div></div>`;
+    el.innerHTML = LOADER;
 
     const [dcs, envs, teams, systems] = await Promise.all([
         api('/api/datacenters'),
@@ -393,7 +394,7 @@ async function renderServers() {
 async function applyServerFilters() {
     const container = document.getElementById('serversContainer');
     if (!container) return;
-    container.innerHTML = `<div class="loading-spinner"><div class="spinner"></div></div>`;
+    container.innerHTML = LOADER;
 
     const dc = document.getElementById('filterDc')?.value || '';
     const env = document.getElementById('filterEnv')?.value || '';
@@ -567,7 +568,7 @@ function resetServerFilters() {
 
 async function renderServices() {
     const el = $('#view-services');
-    el.innerHTML = `<div class="loading-spinner"><div class="spinner"></div></div>`;
+    el.innerHTML = LOADER;
 
     const [tags, dcs] = await Promise.all([
         api('/api/tags'),
@@ -605,7 +606,7 @@ async function renderServices() {
 async function applyServiceFilters() {
     const container = document.getElementById('servicesContainer');
     if (!container) return;
-    container.innerHTML = `<div class="loading-spinner"><div class="spinner"></div></div>`;
+    container.innerHTML = LOADER;
 
     const dc = document.getElementById('filterSvcDc')?.value || '';
     const tag = document.getElementById('filterSvcTag')?.value || '';
@@ -691,7 +692,7 @@ async function applyServiceFilters() {
                                                     <tr class="expand-content nested-expand" id="${hostId}">
                                                         <td colspan="7">
                                                             <div class="expand-body nested-body" id="${hostId}-body">
-                                                                <div class="loading-spinner"><div class="spinner"></div></div>
+                                                                ${LOADER}
                                                             </div>
                                                         </td>
                                                     </tr>`;
@@ -769,7 +770,7 @@ const CHART_COLORS = [
 
 async function renderAnalytics() {
     const el = $('#view-analytics');
-    el.innerHTML = `<div class="loading-spinner"><div class="spinner"></div></div>`;
+    el.innerHTML = LOADER;
 
     const data = await api('/api/analytics');
     const mon = data.monitoring;
