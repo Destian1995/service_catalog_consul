@@ -5,7 +5,7 @@
 
 const API = '';
 let currentView = 'dashboard';
-const LOADER = `<div class="loading-spinner"><svg class="spinner" viewBox="0 0 80 32"><path class="spinner-pulse-bg" d="M4 16h12l4-10 8 20 4-10h12l4-10 8 20 4-10H72"/><path class="spinner-pulse" d="M4 16h12l4-10 8 20 4-10h12l4-10 8 20 4-10H72"/></svg></div>`;
+const LOADER = `<div class="loading-spinner"><div class="loader-ring"><svg class="loader-svg" viewBox="0 0 64 64"><circle class="loader-track" cx="32" cy="32" r="28"/><circle class="loader-arc" cx="32" cy="32" r="28"/><path class="loader-pulse-bg" d="M16 32h6l3-8 7 16 3-8h13"/><path class="loader-pulse" d="M16 32h6l3-8 7 16 3-8h13"/></svg></div></div>`;
 
 // ─── Helpers ───
 

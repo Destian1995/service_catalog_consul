@@ -1166,35 +1166,64 @@ body.sidebar-collapsed .main-content {
     padding: 40px;
 }
 
-.spinner {
-    width: 64px;
-    height: 32px;
+.loader-ring {
+    width: 72px;
+    height: 72px;
 }
 
-.spinner-pulse {
+.loader-svg {
+    width: 100%;
+    height: 100%;
+}
+
+/* Outer ring track */
+.loader-track {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.06);
+    stroke-width: 2;
+}
+
+/* Spinning arc segments */
+.loader-arc {
     fill: none;
     stroke: var(--accent);
     stroke-width: 2.5;
     stroke-linecap: round;
-    stroke-linejoin: round;
-    stroke-dasharray: 120;
-    stroke-dashoffset: 120;
-    animation: pulse-load 1.4s ease-in-out infinite;
+    stroke-dasharray: 30 146;
+    transform-origin: center;
+    animation: loader-spin 1.6s linear infinite;
 }
 
-.spinner-pulse-bg {
+@keyframes loader-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Pulse line background (faint) */
+.loader-pulse-bg {
     fill: none;
-    stroke: var(--border-light);
+    stroke: rgba(255, 255, 255, 0.08);
     stroke-width: 2;
     stroke-linecap: round;
     stroke-linejoin: round;
 }
 
-@keyframes pulse-load {
-    0%   { stroke-dashoffset: 120; opacity: 0.2; }
+/* Animated pulse line */
+.loader-pulse {
+    fill: none;
+    stroke: var(--accent-light);
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 60;
+    stroke-dashoffset: 60;
+    animation: loader-pulse-draw 1.8s ease-in-out infinite;
+}
+
+@keyframes loader-pulse-draw {
+    0%   { stroke-dashoffset: 60; opacity: 0.2; }
     40%  { stroke-dashoffset: 0; opacity: 1; }
     70%  { stroke-dashoffset: 0; opacity: 1; }
-    100% { stroke-dashoffset: -120; opacity: 0.2; }
+    100% { stroke-dashoffset: -60; opacity: 0.2; }
 }
 
 /* ═══════════════════════════════════════
