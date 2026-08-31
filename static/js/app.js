@@ -62,6 +62,7 @@ function navigate(view) {
     if (view === 'dashboard') renderDashboard();
     else if (view === 'servers') renderServers();
     else if (view === 'services') renderServices();
+    else if (view === 'monitoring') renderMonitoring();
     else if (view === 'analytics') renderAnalytics();
 
     const targetView = $(`#view-${view}`);
@@ -125,7 +126,7 @@ async function renderDashboard() {
                 <div class="stat-label">Всего серверов</div>
                 <div class="stat-value">${summary.total_nodes}</div>
             </div>
-            <div class="stat-card accent clickable" onclick="navigate('analytics')">
+            <div class="stat-card accent clickable" onclick="navigate('monitoring')">
                 <div class="stat-label">ИС на мониторинге</div>
                 <div class="stat-value">${isMon.monitored_is || 0}<span style="font-size:16px;color:var(--text-muted);font-weight:400"> / ${isMon.total_is || 0}</span></div>
             </div>
@@ -801,6 +802,178 @@ const CHART_COLORS = [
     '#34d399', '#4ade80', '#a3e635', '#facc15',
     '#fb923c', '#f87171', '#fb7185', '#e879f9',
 ];
+
+// ═══════════════════════════════════════
+// Мониторинг ИС — управление
+// ═══════════════════════════════════════
+
+async function renderMonitoring() {
+    const el = $('#view-monitoring');
+    el.innerHTML = LOADER;
+
+    const data = await api('/api/analytics');
+    const systems = data.hosts_by_system || {};
+    const isMon = data.is_monitoring || {};
+
+    // Filter controls
+    const allEnvs = [...new Set(Object.values(systems).flatMap(s => s.environments))].sort();
+    const allDcs = [...new Set(Object.values(systems).flatMap(s => s.datacenters))].sort();
+
+    el.innerHTML = `
+        <h2 class="page-title">Мониторинг информационных систем</h2>
+
+        <div class="stats-grid" style="margin-bottom:24px">
+            <div class="stat-card accent">
+                <div class="stat-label">Всего ИС</div>
+                <div class="stat-value">${isMon.total_is}</div>
+            </div>
+            <div class="stat-card passing">
+                <div class="stat-label">На мониторинге</div>
+                <div class="stat-value">${isMon.monitored_is}</div>
+            </div>
+            <div class="stat-card warning">
+                <div class="stat-label">Не на мониторинге</div>
+                <div class="stat-value">${isMon.total_is - isMon.monitored_is}</div>
+            </div>
+            <div class="stat-card accent">
+                <div class="stat-label">Покрытие ИС</div>
+                <div class="stat-value">${isMon.coverage_pct}%</div>
+            </div>
+        </div>
+
+        <div class="filter-bar" style="margin-bottom:16px">
+            <div class="filter-group">
+                <span class="filter-label">Статус</span>
+                <select class="filter-select" id="monFilterStatus" onchange="filterMonitoringCards()">
+                    <option value="">Все</option>
+                    <option value="monitored">На мониторинге</option>
+                    <option value="not_monitored">Не на мониторинге</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Среда</span>
+                <select class="filter-select" id="monFilterEnv" onchange="filterMonitoringCards()">
+                    <option value="">Все</option>
+                    ${allEnvs.map(e => '<option value="' + e + '">' + e + '</option>').join('')}
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">ДЦ</span>
+                <select class="filter-select" id="monFilterDc" onchange="filterMonitoringCards()">
+                    <option value="">Все</option>
+                    ${allDcs.map(d => '<option value="' + d + '">' + d + '</option>').join('')}
+                </select>
+            </div>
+            <input class="filter-search" id="monFilterSearch" placeholder="Поиск ИС..." oninput="filterMonitoringCards()">
+            <button class="btn-reset" onclick="resetMonFilters()">Сбросить</button>
+        </div>
+
+        <div class="systems-panel" id="monSystemsPanel">
+            ${renderMonitoringCards(systems, data.services_by_system)}
+        </div>
+    `;
+}
+
+function renderMonitoringCards(systems, servicesBySystem) {
+    return Object.entries(systems).map(([sysName, info]) => {
+        if (sysName === 'Unassigned') return '';
+        const svcs = (servicesBySystem || {})[sysName] || [];
+        const checked = info.is_monitored;
+        const covered = info.all_covered;
+        return `
+        <div class="system-card ${checked ? 'system-monitored' : ''}"
+             data-sysname="${sysName}"
+             data-monitored="${checked ? '1' : '0'}"
+             data-envs="${(info.environments || []).join(',')}"
+             data-dcs="${(info.datacenters || []).join(',')}"
+             id="mon-card-${sysName.replace(/[^a-zA-Z0-9]/g, '_')}">
+            <div class="system-card-header">
+                <label class="mon-toggle" onclick="event.stopPropagation()">
+                    <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleSystemMon('${sysName.replace(/'/g, "\\'")}', this.checked)">
+                    <span class="mon-toggle-slider"></span>
+                </label>
+                <div class="system-card-info">
+                    <div class="system-card-name">${sysName}</div>
+                    <div class="system-card-meta">
+                        ${(info.datacenters || []).map(dc => '<span class="badge badge-dc">' + dc + '</span>').join('')}
+                        ${(info.environments || []).map(e => '<span class="badge badge-env">' + e + '</span>').join('')}
+                        ${covered ? '<span class="badge badge-passing" style="font-size:10px">все хосты покрыты</span>' : ''}
+                    </div>
+                </div>
+                <div class="system-card-count">
+                    <span class="system-count-num">${info.count}</span>
+                    <span class="system-count-label">${plural(info.count, 'хост', 'хоста', 'хостов')}</span>
+                </div>
+            </div>
+            <div class="system-card-bar">
+                <div class="system-card-fill" style="width:${info.count > 0 ? Math.round(((info.mon_full + info.mon_basic) / info.count) * 100) : 0}%"></div>
+            </div>
+            <div class="system-card-mon-stats">
+                ${info.mon_full > 0 ? '<span class="inst-badge inst-passing">полный: ' + info.mon_full + '</span>' : ''}
+                ${info.mon_basic > 0 ? '<span class="inst-badge inst-warning">базовый: ' + info.mon_basic + '</span>' : ''}
+                ${info.mon_none > 0 ? '<span class="inst-badge" style="background:rgba(100,116,139,0.1);border:1px solid rgba(100,116,139,0.2);color:var(--text-muted)">нет: ' + info.mon_none + '</span>' : ''}
+            </div>
+            <div class="system-card-details">
+                <div class="system-detail-group">
+                    <span class="system-detail-label">Серверы</span>
+                    <div class="system-detail-tags">${info.servers.map(s => '<span class="tag">' + s + '</span>').join('')}</div>
+                </div>
+                ${svcs.length > 0 ? '<div class="system-detail-group"><span class="system-detail-label">Сервисы</span><div class="system-detail-tags">' + svcs.map(s => '<span class="tag ' + getTagClass(s) + '">' + s + '</span>').join('') + '</div></div>' : ''}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+async function toggleSystemMon(sysName, isChecked) {
+    try {
+        await fetch('/api/admin/toggle-monitored-system', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({system_name: sysName})
+        });
+        const cardId = 'mon-card-' + sysName.replace(/[^a-zA-Z0-9]/g, '_');
+        const card = document.getElementById(cardId);
+        if (card) {
+            card.classList.toggle('system-monitored', isChecked);
+            card.dataset.monitored = isChecked ? '1' : '0';
+        }
+        // Also update analytics card if exists
+        const aCard = document.getElementById('sys-card-' + sysName.replace(/[^a-zA-Z0-9]/g, '_'));
+        if (aCard) aCard.classList.toggle('system-monitored', isChecked);
+    } catch(e) {
+        console.error('Toggle error:', e);
+    }
+}
+
+function filterMonitoringCards() {
+    const status = document.getElementById('monFilterStatus')?.value || '';
+    const env = document.getElementById('monFilterEnv')?.value || '';
+    const dc = document.getElementById('monFilterDc')?.value || '';
+    const search = (document.getElementById('monFilterSearch')?.value || '').toLowerCase();
+
+    document.querySelectorAll('#monSystemsPanel .system-card').forEach(card => {
+        const name = (card.dataset.sysname || '').toLowerCase();
+        const isMon = card.dataset.monitored === '1';
+        const cardEnvs = card.dataset.envs || '';
+        const cardDcs = card.dataset.dcs || '';
+
+        let show = true;
+        if (status === 'monitored' && !isMon) show = false;
+        if (status === 'not_monitored' && isMon) show = false;
+        if (env && !cardEnvs.split(',').includes(env)) show = false;
+        if (dc && !cardDcs.split(',').includes(dc)) show = false;
+        if (search && !name.includes(search)) show = false;
+
+        card.style.display = show ? '' : 'none';
+    });
+}
+
+function resetMonFilters() {
+    ['monFilterStatus', 'monFilterEnv', 'monFilterDc', 'monFilterSearch'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    filterMonitoringCards();
+}
 
 async function renderAnalytics() {
     const el = $('#view-analytics');

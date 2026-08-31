@@ -459,8 +459,9 @@ def api_analytics():
 
     hosts_by_system = {}
     for n in nodes:
-        sys_name = n["Meta"].get("system_name", "Unassigned")
-        if sys_name == "-": sys_name = "Unassigned"
+        sys_name = (n["Meta"].get("system_name") or "").strip()
+        if not sys_name or sys_name == "-":
+            sys_name = "Unassigned"
         if sys_name not in hosts_by_system:
             hosts_by_system[sys_name] = {"count": 0, "servers": [], "dcs": set(), "envs": set(),
                                           "full": 0, "basic": 0, "none": 0}
