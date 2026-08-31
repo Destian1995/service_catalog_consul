@@ -270,6 +270,46 @@ def api_health_summary():
     summary["total_services"] = len(svc_names)
     return jsonify(summary)
 
+@app.route("/api/health/details")
+def api_health_details():
+    """Detailed health checks with filters: dc, status, system_name.
+    Returns checks grouped by server with IS and service info."""
+    f_dc = request.args.get("dc", "")
+    f_status = request.args.get("status", "")
+    f_system = request.args.get("system_name", "")
+
+    filters = {}
+    if f_dc:
+        filters["dc"] = f_dc
+    nodes = get_nodes(filters if filters else None)
+
+    if f_system:
+        nodes = [n for n in nodes if n["Meta"].get("system_name") == f_system]
+
+    # Gather checks per node
+    results = []
+    for n in nodes:
+        detail = get_node_detail(n["Node"])
+        if not detail:
+            continue
+        checks = detail.get("checks", [])
+        if f_status:
+            checks = [c for c in checks if c.get("Status") == f_status]
+        if not checks and f_status:
+            continue
+        results.append({
+            "node": n["Node"],
+            "address": n["Address"],
+            "datacenter": n["Datacenter"],
+            "system_name": n["Meta"].get("system_name", "-"),
+            "environment": n["Meta"].get("environment", "-"),
+            "team": n["Meta"].get("team", "-"),
+            "services_count": len(detail.get("services", [])),
+            "checks": checks,
+        })
+
+    return jsonify(results)
+
 @app.route("/api/tags")
 def api_tags():
     services = get_services()

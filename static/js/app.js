@@ -115,23 +115,23 @@ async function renderDashboard() {
     el.innerHTML = `
         <h2 class="page-title">Обзор</h2>
         <div class="stats-grid">
-            <div class="stat-card accent">
+            <div class="stat-card accent clickable" onclick="drillDown({})">
                 <div class="stat-label">Всего серверов</div>
                 <div class="stat-value">${summary.total_nodes}</div>
             </div>
-            <div class="stat-card accent">
+            <div class="stat-card accent clickable" onclick="navigate('services')">
                 <div class="stat-label">Всего сервисов</div>
                 <div class="stat-value">${summary.total_services}</div>
             </div>
-            <div class="stat-card passing">
+            <div class="stat-card passing clickable" onclick="drillDown({status:'passing'})">
                 <div class="stat-label">Проверки ОК</div>
                 <div class="stat-value">${summary.passing}</div>
             </div>
-            <div class="stat-card warning">
+            <div class="stat-card warning clickable" onclick="drillDown({status:'warning'})">
                 <div class="stat-label">Предупреждения</div>
                 <div class="stat-value">${summary.warning}</div>
             </div>
-            <div class="stat-card critical">
+            <div class="stat-card critical clickable" onclick="drillDown({status:'critical'})">
                 <div class="stat-label">Критические</div>
                 <div class="stat-value">${summary.critical}</div>
             </div>
@@ -140,7 +140,7 @@ async function renderDashboard() {
         <div class="section-title">Серверы по дата-центрам</div>
         <div class="stats-grid" style="margin-bottom:32px">
             ${Object.entries(dcs).map(([dc, data]) => `
-                <div class="stat-card accent" style="cursor:pointer" onclick="navigate('servers')">
+                <div class="stat-card accent clickable" onclick="drillDown({dc:'${dc}'})">
                     <div class="stat-label">${dc}</div>
                     <div class="stat-value">${data.total}</div>
                     <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
@@ -150,6 +150,9 @@ async function renderDashboard() {
                 </div>
             `).join('')}
         </div>
+
+        <!-- Drill-down panel -->
+        <div id="drillDownPanel" style="display:none"></div>
 
         <div class="section-title">Обзор сервисов</div>
         <div class="table-wrapper">
@@ -173,6 +176,145 @@ async function renderDashboard() {
                     `).join('')}
                 </tbody>
             </table>
+        </div>
+    `;
+}
+
+// ═══════════════════════════════════════
+// Dashboard Drill-Down
+// ═══════════════════════════════════════
+
+async function drillDown(filters) {
+    const panel = document.getElementById('drillDownPanel');
+    if (!panel) return;
+
+    // Toggle off if same filter clicked again
+    if (panel.style.display !== 'none' && panel.dataset.filter === JSON.stringify(filters)) {
+        panel.style.display = 'none';
+        return;
+    }
+    panel.dataset.filter = JSON.stringify(filters);
+    panel.style.display = 'block';
+    panel.innerHTML = `<div class="loading-spinner"><div class="spinner"></div></div>`;
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    // Build query
+    let url = '/api/health/details?';
+    if (filters.dc) url += `dc=${encodeURIComponent(filters.dc)}&`;
+    if (filters.status) url += `status=${encodeURIComponent(filters.status)}&`;
+    if (filters.system_name) url += `system_name=${encodeURIComponent(filters.system_name)}&`;
+
+    const data = await api(url);
+
+    // Build title
+    const parts = [];
+    if (filters.dc) parts.push(`ДЦ: ${filters.dc}`);
+    if (filters.status) {
+        const statusNames = { passing: 'Норма', warning: 'Предупреждения', critical: 'Критические' };
+        parts.push(statusNames[filters.status] || filters.status);
+    }
+    if (filters.system_name) parts.push(`ИС: ${filters.system_name}`);
+    const title = parts.length ? parts.join(' / ') : 'Все серверы';
+
+    // Collect IS stats
+    const isStat = {};
+    let totalChecks = 0;
+    data.forEach(d => {
+        const is = d.system_name || '-';
+        if (!isStat[is]) isStat[is] = { servers: 0, checks: 0, passing: 0, warning: 0, critical: 0 };
+        isStat[is].servers++;
+        d.checks.forEach(c => {
+            isStat[is].checks++;
+            isStat[is][c.Status]++;
+            totalChecks++;
+        });
+    });
+
+    // Filters for drill-down sub-filter
+    const allIS = [...new Set(data.map(d => d.system_name).filter(s => s && s !== '-'))].sort();
+
+    panel.innerHTML = `
+        <div class="drilldown-container">
+            <div class="drilldown-header">
+                <div class="drilldown-title">${title}</div>
+                <div class="drilldown-summary">
+                    ${data.length} ${plural(data.length, 'сервер', 'сервера', 'серверов')}, ${totalChecks} ${plural(totalChecks, 'проверка', 'проверки', 'проверок')}
+                </div>
+                <button class="btn-icon" onclick="document.getElementById('drillDownPanel').style.display='none'" title="Закрыть" style="margin-left:auto">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+
+            ${allIS.length > 1 ? `
+            <div class="drilldown-is-filter">
+                <span class="filter-label">ИС</span>
+                ${allIS.map(is => `<button class="filter-chip" onclick="drillDown({...${JSON.stringify(filters)}, system_name:'${is}'})">${is}</button>`).join('')}
+            </div>` : ''}
+
+            ${Object.keys(isStat).length > 1 ? `
+            <div class="drilldown-is-cards">
+                ${Object.entries(isStat).sort((a,b) => b[1].servers - a[1].servers).map(([is, st]) => `
+                    <div class="drilldown-is-card clickable" onclick="drillDown({...${JSON.stringify(filters)}, system_name:'${is}'})">
+                        <div class="drilldown-is-name">${is}</div>
+                        <div class="drilldown-is-stats">
+                            <span>${st.servers} ${plural(st.servers, 'сервер', 'сервера', 'серверов')}</span>
+                            ${st.passing > 0 ? `<span class="inst-badge inst-passing">${st.passing}</span>` : ''}
+                            ${st.warning > 0 ? `<span class="inst-badge inst-warning">${st.warning}</span>` : ''}
+                            ${st.critical > 0 ? `<span class="inst-badge inst-critical">${st.critical}</span>` : ''}
+                        </div>
+                    </div>
+                `).join('')}
+            </div>` : ''}
+
+            <div class="table-wrapper" style="margin-top:12px">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th style="width:32px"></th>
+                            <th>Статус</th>
+                            <th>Сервер</th>
+                            <th>ИС</th>
+                            <th>IP</th>
+                            <th>ДЦ</th>
+                            <th>Среда</th>
+                            <th>Проверки</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.map((d, i) => {
+                            const worst = d.checks.some(c => c.Status === 'critical') ? 'critical'
+                                        : d.checks.some(c => c.Status === 'warning') ? 'warning' : 'passing';
+                            const ddRowId = `dd-row-${i}`;
+                            return `
+                            <tr class="expandable-row" onclick="toggleRow('${ddRowId}', this)">
+                                <td>${chevronIcon()}</td>
+                                <td><span class="status-dot status-${worst}"></span></td>
+                                <td class="cell-name">${d.node}</td>
+                                <td><span class="badge badge-system">${d.system_name}</span></td>
+                                <td class="cell-mono">${d.address}</td>
+                                <td><span class="badge badge-dc">${d.datacenter}</span></td>
+                                <td><span class="badge badge-env">${d.environment}</span></td>
+                                <td class="cell-mono">${d.checks.length}</td>
+                            </tr>
+                            <tr class="expand-content" id="${ddRowId}">
+                                <td colspan="8">
+                                    <div class="expand-body">
+                                        ${d.checks.map(c => `
+                                            <div class="check-item">
+                                                <div class="check-status ${c.Status}">${statusIcon(c.Status)}</div>
+                                                <div class="check-body">
+                                                    <div class="check-name">${c.Name}${c.ServiceName ? ` <span style="color:var(--text-muted);font-weight:400;font-size:12px">(${c.ServiceName})</span>` : ''}</div>
+                                                    <div class="check-output">${c.Output || '-'}</div>
+                                                </div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
         </div>
     `;
 }
@@ -235,6 +377,9 @@ async function renderServers() {
 }
 
 async function applyServerFilters() {
+    const container = document.getElementById('serversContainer');
+    if (container) container.innerHTML = `<div class="loading-spinner"><div class="spinner"></div></div>`;
+
     const dc = document.getElementById('filterDc')?.value || '';
     const env = document.getElementById('filterEnv')?.value || '';
     const team = document.getElementById('filterTeam')?.value || '';
@@ -445,6 +590,9 @@ async function renderServices() {
 }
 
 async function applyServiceFilters() {
+    const container = document.getElementById('servicesContainer');
+    if (container) container.innerHTML = `<div class="loading-spinner"><div class="spinner"></div></div>`;
+
     const dc = document.getElementById('filterSvcDc')?.value || '';
     const tag = document.getElementById('filterSvcTag')?.value || '';
     const search = document.getElementById('filterSvcSearch')?.value || '';
