@@ -846,8 +846,10 @@ async function renderMonitoring() {
                 <span class="filter-label">Статус</span>
                 <select class="filter-select" id="monFilterStatus" onchange="filterMonitoringCards()">
                     <option value="">Все</option>
-                    <option value="monitored">На мониторинге</option>
-                    <option value="not_monitored">Не на мониторинге</option>
+                    <option value="full">Полный мониторинг</option>
+                    <option value="advanced">Продвинутый</option>
+                    <option value="basic">Базовый</option>
+                    <option value="none">Без мониторинга</option>
                 </select>
             </div>
             <div class="filter-group">
@@ -884,10 +886,16 @@ function renderMonitoringCards(systems, servicesBySystem) {
         const bas = info.mon_basic || 0;
         const none = info.mon_none || 0;
         const barPct = info.count > 0 ? Math.round(((adv + bas) / info.count) * 100) : 0;
+        // Determine IS-level: full(manual) > advanced > basic > none
+        let level = 'none';
+        if (isFull) level = 'full';
+        else if (adv > 0) level = 'advanced';
+        else if (bas > 0) level = 'basic';
         return `
         <div class="system-card ${isFull ? 'system-monitored' : ''}"
              data-sysname="${sysName}"
              data-monitored="${isFull ? '1' : '0'}"
+             data-level="${level}"
              data-envs="${(info.environments || []).join(',')}"
              data-dcs="${(info.datacenters || []).join(',')}"
              id="mon-card-${sysName.replace(/[^a-zA-Z0-9]/g, '_')}">
@@ -956,13 +964,12 @@ function filterMonitoringCards() {
 
     document.querySelectorAll('#monSystemsPanel .system-card').forEach(card => {
         const name = (card.dataset.sysname || '').toLowerCase();
-        const isMon = card.dataset.monitored === '1';
+        const cardLevel = card.dataset.level || 'none';
         const cardEnvs = card.dataset.envs || '';
         const cardDcs = card.dataset.dcs || '';
 
         let show = true;
-        if (status === 'monitored' && !isMon) show = false;
-        if (status === 'not_monitored' && isMon) show = false;
+        if (status && cardLevel !== status) show = false;
         if (env && !cardEnvs.split(',').includes(env)) show = false;
         if (dc && !cardDcs.split(',').includes(dc)) show = false;
         if (search && !name.includes(search)) show = false;

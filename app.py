@@ -449,13 +449,21 @@ def api_analytics():
             if env not in monitoring_by_env: monitoring_by_env[env] = {"advanced": 0, "basic": 0, "none": 0}
             monitoring_by_env[env][level] += 1
     else:
-        # Live mode — classify by services registered on each node
+        # Live mode — classify by metadata fields (fast, no per-node API calls)
         for n in nodes:
-            detail = get_node_detail(n["Node"])
-            node_svcs = set()
-            if detail:
-                node_svcs = {s["Service"] for s in detail.get("services", [])}
-            level = _classify_host(node_svcs)
+            raw = n.get("_raw_meta", {})
+            # Count system_dependencies_* fields that have real values
+            dep_keys = [k for k in raw if k.startswith("system_dependencies_")]
+            has_monitoring_dep = raw.get("system_dependencies_monitoring", "").lower() not in ("", "false", "0", "no")
+            non_empty_deps = sum(1 for k in dep_keys if raw.get(k, "").strip() and
+                                 raw.get(k, "").lower() not in ("false", "0", "no"))
+            if has_monitoring_dep or non_empty_deps > 1:
+                level = "advanced"
+            elif non_empty_deps >= 1 or any(raw.get(k, "") for k in
+                    ["consul-version"] if raw.get(k, "").strip()):
+                level = "basic"
+            else:
+                level = "none"
             monitoring_levels[level].append(n["Node"])
             dc = n["Datacenter"]
             if dc not in monitoring_by_dc: monitoring_by_dc[dc] = {"advanced": 0, "basic": 0, "none": 0}
