@@ -889,7 +889,10 @@ async function renderMonitoring() {
                         <div class="system-card-info">
                             <div class="system-card-name" style="text-decoration:line-through;color:var(--text-muted)">${name}</div>
                         </div>
-                        <button class="btn btn-secondary" style="font-size:11px;padding:4px 12px" onclick="toggleExcludeSystem('${name.replace(/'/g, "\\'")}')">Вернуть</button>
+                        <button class="btn-restore" onclick="toggleExcludeSystem('${name.replace(/'/g, "\\'")}')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 119 9"/><polyline points="3 7 3 12 8 12"/></svg>
+                            Вернуть
+                        </button>
                     </div>
                 </div>
             `).join('')}
@@ -952,8 +955,11 @@ function renderMonitoringCards(systems, servicesBySystem) {
                     <div class="system-detail-tags">${info.servers.map(s => '<span class="tag">' + s + '</span>').join('')}</div>
                 </div>
                 ${svcs.length > 0 ? '<div class="system-detail-group"><span class="system-detail-label">Сервисы</span><div class="system-detail-tags">' + svcs.map(s => '<span class="tag ' + getTagClass(s) + '">' + s + '</span>').join('') + '</div></div>' : ''}
-                <div style="margin-top:8px;text-align:right">
-                    <button class="btn btn-danger" style="font-size:11px;padding:3px 10px" onclick="event.stopPropagation();toggleExcludeSystem('${sysName.replace(/'/g, "\\'")}')">Исключить из каталога</button>
+                <div style="margin-top:10px;text-align:right">
+                    <button class="btn-exclude" onclick="event.stopPropagation();toggleExcludeSystem('${sysName.replace(/'/g, "\\'")}')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+                        Исключить
+                    </button>
                 </div>
             </div>
         </div>`;

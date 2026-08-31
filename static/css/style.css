@@ -1970,6 +1970,66 @@ body.sidebar-collapsed .main-content {
     margin-bottom: 10px;
 }
 
+/* ─── Exclude / Restore buttons ─── */
+.btn-exclude {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    border: 1px solid transparent;
+    border-radius: 20px;
+    background: rgba(239, 68, 68, 0.06);
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.25s;
+}
+
+.btn-exclude svg {
+    width: 13px;
+    height: 13px;
+    opacity: 0.6;
+    transition: opacity 0.25s;
+}
+
+.btn-exclude:hover {
+    background: var(--critical-bg);
+    border-color: var(--critical-border);
+    color: var(--critical);
+}
+
+.btn-exclude:hover svg {
+    opacity: 1;
+}
+
+.btn-restore {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 16px;
+    border: 1px solid var(--passing-border);
+    border-radius: 20px;
+    background: var(--passing-bg);
+    color: var(--passing);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.25s;
+}
+
+.btn-restore svg {
+    width: 14px;
+    height: 14px;
+}
+
+.btn-restore:hover {
+    background: rgba(16, 185, 129, 0.2);
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.15);
+}
+
 /* ─── Monitoring toggle switch ─── */
 .mon-toggle {
     position: relative;
