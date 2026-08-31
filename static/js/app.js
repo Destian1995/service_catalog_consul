@@ -163,12 +163,12 @@ async function renderDashboard() {
         <!-- Drill-down panel -->
         <div id="drillDownPanel" style="display:none"></div>
 
-        <div class="section-title">Обзор сервисов</div>
+        <div class="section-title">Обзор экспортеров</div>
         <div class="table-wrapper">
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>Сервис</th>
+                        <th>Экспортер</th>
                         <th>Экземпляры</th>
                         <th>Порты</th>
                         <th>Теги</th>
@@ -465,7 +465,7 @@ async function applyServerFilters() {
                     <th>Дата-центр</th>
                     <th>Среда</th>
                     <th>ОС</th>
-                    <th>Сервисы</th>
+                    <th>Экспортеры</th>
                 </tr>
             </thead>
             <tbody>
@@ -498,7 +498,7 @@ async function applyServerFilters() {
                                 <div class="expand-body">
                                     <div class="expand-tabs">
                                         <button class="tab active" onclick="event.stopPropagation(); switchExpandTab(this, '${rowId}-overview')">Обзор</button>
-                                        <button class="tab" onclick="event.stopPropagation(); switchExpandTab(this, '${rowId}-services')">Сервисы <span class="tab-count">${services.length}</span></button>
+                                        <button class="tab" onclick="event.stopPropagation(); switchExpandTab(this, '${rowId}-services')">Экспортеры <span class="tab-count">${services.length}</span></button>
                                         <button class="tab" onclick="event.stopPropagation(); switchExpandTab(this, '${rowId}-health')">Проверки <span class="tab-count">${checks.length}</span></button>
                                         <button class="tab" onclick="event.stopPropagation(); switchExpandTab(this, '${rowId}-network')">Сеть</button>
                                     </div>
@@ -531,9 +531,9 @@ async function applyServerFilters() {
                                     </div>
 
                                     <div class="expand-panel" id="${rowId}-services">
-                                        ${services.length === 0 ? '<div class="empty-state"><p>Нет сервисов</p></div>' :
+                                        ${services.length === 0 ? '<div class="empty-state"><p>Нет экспортеров</p></div>' :
                                         `<table class="data-table nested-table">
-                                            <thead><tr><th>Статус</th><th>Сервис</th><th>Порт</th><th>Версия</th><th>Теги</th></tr></thead>
+                                            <thead><tr><th>Статус</th><th>Экспортер</th><th>Порт</th><th>Версия</th><th>Теги</th></tr></thead>
                                             <tbody>
                                                 ${services.map(svc => {
                                                     const svcChecks = checks.filter(c => c.ServiceName === svc.Service);
@@ -598,7 +598,7 @@ function resetServerFilters() {
 }
 
 // ═══════════════════════════════════════
-// Сервисы — Таблица с раскрывающимися строками
+// Экспортеры — Таблица с раскрывающимися строками
 // ═══════════════════════════════════════
 
 async function renderServices() {
@@ -613,7 +613,7 @@ async function renderServices() {
     const globalSearch = $('#globalSearch').value || '';
 
     el.innerHTML = `
-        <h2 class="page-title">Сервисы</h2>
+        <h2 class="page-title">Экспортеры</h2>
         <div class="filter-bar">
             <div class="filter-group">
                 <span class="filter-label">ДЦ</span>
@@ -629,7 +629,7 @@ async function renderServices() {
                     ${tags.map(t => `<option value="${t}">${t}</option>`).join('')}
                 </select>
             </div>
-            <input class="filter-search" id="filterSvcSearch" placeholder="Поиск сервисов..."
+            <input class="filter-search" id="filterSvcSearch" placeholder="Поиск экспортеров..."
                    value="${globalSearch}" oninput="applyServiceFilters()">
             <button class="btn-reset" onclick="resetServiceFilters()">Сбросить</button>
         </div>
@@ -655,7 +655,7 @@ async function applyServiceFilters() {
     const services = await api(url);
 
     if (services.length === 0) {
-        container.innerHTML = `<div class="empty-state"><p>Сервисы не найдены</p></div>`;
+        container.innerHTML = `<div class="empty-state"><p>Экспортеры не найдены</p></div>`;
         return;
     }
 
@@ -666,7 +666,7 @@ async function applyServiceFilters() {
             <thead>
                 <tr>
                     <th style="width:32px"></th>
-                    <th>Сервис</th>
+                    <th>Экспортер</th>
                     <th>Экземпляры</th>
                     <th>Порты</th>
                     <th>Теги</th>
@@ -756,7 +756,7 @@ async function applyServiceFilters() {
                                     <div class="expand-panel" id="${rowId}-meta">
                                         <div class="info-grid">
                                             <div class="info-card">
-                                                <div class="info-card-title">Метаданные сервиса</div>
+                                                <div class="info-card-title">Метаданные экспортера</div>
                                                 ${Object.entries(meta).map(([k, v]) =>
                                                     `<div class="info-row"><span class="info-key">${k}</span><span class="info-value">${v}</span></div>`
                                                 ).join('')}
@@ -954,7 +954,7 @@ function renderMonitoringCards(systems, servicesBySystem) {
                     <span class="system-detail-label">Серверы</span>
                     <div class="system-detail-tags">${info.servers.map(s => '<span class="tag">' + s + '</span>').join('')}</div>
                 </div>
-                ${svcs.length > 0 ? '<div class="system-detail-group"><span class="system-detail-label">Сервисы</span><div class="system-detail-tags">' + svcs.map(s => '<span class="tag ' + getTagClass(s) + '">' + s + '</span>').join('') + '</div></div>' : ''}
+                ${svcs.length > 0 ? '<div class="system-detail-group"><span class="system-detail-label">Экспортеры</span><div class="system-detail-tags">' + svcs.map(s => '<span class="tag ' + getTagClass(s) + '">' + s + '</span>').join('') + '</div></div>' : ''}
                 <div style="margin-top:10px;text-align:right">
                     <button class="btn-exclude" onclick="event.stopPropagation();toggleExcludeSystem('${sysName.replace(/'/g, "\\'")}')">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
@@ -1180,7 +1180,7 @@ async function renderAnalytics() {
                                 <div class="system-detail-tags">${info.servers.map(s => '<span class="tag">' + s + '</span>').join('')}</div>
                             </div>
                             <div class="system-detail-group">
-                                <span class="system-detail-label">Сервисы</span>
+                                <span class="system-detail-label">Экспортеры</span>
                                 <div class="system-detail-tags">${svcs.map(s => '<span class="tag ' + getTagClass(s) + '">' + s + '</span>').join('')}</div>
                             </div>
                         </div>
@@ -1199,12 +1199,12 @@ async function renderAnalytics() {
         <div class="section-title" style="margin-top:32px">Разбивка инфраструктуры</div>
         <div class="charts-grid">
             <div class="chart-card chart-card-wide">
-                <div class="chart-card-title">Экземпляры по сервисам</div>
+                <div class="chart-card-title">Экземпляры по экспортерам</div>
                 <canvas id="chart-instances-bar"></canvas>
             </div>
 
             <div class="chart-card">
-                <div class="chart-card-title">Сервисы по категориям</div>
+                <div class="chart-card-title">Экспортеры по категориям</div>
                 <canvas id="chart-svc-cat"></canvas>
                 <div class="chart-legend" id="legend-svc-cat"></div>
             </div>
@@ -1240,7 +1240,7 @@ async function renderAnalytics() {
             </div>
 
             <div class="chart-card chart-card-wide">
-                <div class="chart-card-title">Сервисы на сервере</div>
+                <div class="chart-card-title">Экспортеры на сервере</div>
                 <canvas id="chart-svcs-server"></canvas>
             </div>
 
@@ -1437,7 +1437,7 @@ async function toggleHostRow(rowId, triggerRow, nodeName) {
         bodyEl.innerHTML = `
             <div class="expand-tabs">
                 <button class="tab active" onclick="event.stopPropagation(); switchExpandTab(this, '${rowId}-overview')">Обзор</button>
-                <button class="tab" onclick="event.stopPropagation(); switchExpandTab(this, '${rowId}-services')">Сервисы <span class="tab-count">${services.length}</span></button>
+                <button class="tab" onclick="event.stopPropagation(); switchExpandTab(this, '${rowId}-services')">Экспортеры <span class="tab-count">${services.length}</span></button>
                 <button class="tab" onclick="event.stopPropagation(); switchExpandTab(this, '${rowId}-health')">Проверки <span class="tab-count">${checks.length}</span></button>
                 <button class="tab" onclick="event.stopPropagation(); switchExpandTab(this, '${rowId}-network')">Сеть</button>
             </div>
@@ -1468,9 +1468,9 @@ async function toggleHostRow(rowId, triggerRow, nodeName) {
                 </div>
             </div>
             <div class="expand-panel" id="${rowId}-services">
-                ${services.length === 0 ? '<div class="empty-state"><p>Нет сервисов</p></div>' :
+                ${services.length === 0 ? '<div class="empty-state"><p>Нет экспортеров</p></div>' :
                 `<table class="data-table nested-table">
-                    <thead><tr><th>Статус</th><th>Сервис</th><th>Порт</th><th>Версия</th><th>Теги</th></tr></thead>
+                    <thead><tr><th>Статус</th><th>Экспортер</th><th>Порт</th><th>Версия</th><th>Теги</th></tr></thead>
                     <tbody>${services.map(svc => {
                         const svcChecks = checks.filter(c => c.ServiceName === svc.Service);
                         let svcStatus = 'passing';
