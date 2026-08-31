@@ -392,7 +392,8 @@ async function renderServers() {
 
 async function applyServerFilters() {
     const container = document.getElementById('serversContainer');
-    if (container) container.innerHTML = `<div class="loading-spinner"><div class="spinner"></div></div>`;
+    if (!container) return;
+    container.innerHTML = `<div class="loading-spinner"><div class="spinner"></div></div>`;
 
     const dc = document.getElementById('filterDc')?.value || '';
     const env = document.getElementById('filterEnv')?.value || '';
@@ -408,8 +409,6 @@ async function applyServerFilters() {
     if (search) url += `search=${encodeURIComponent(search)}&`;
 
     const nodes = await api(url);
-    const container = document.getElementById('serversContainer');
-    if (!container) return;
 
     if (nodes.length === 0) {
         container.innerHTML = `<div class="empty-state"><p>Серверы не найдены</p></div>`;
@@ -605,7 +604,8 @@ async function renderServices() {
 
 async function applyServiceFilters() {
     const container = document.getElementById('servicesContainer');
-    if (container) container.innerHTML = `<div class="loading-spinner"><div class="spinner"></div></div>`;
+    if (!container) return;
+    container.innerHTML = `<div class="loading-spinner"><div class="spinner"></div></div>`;
 
     const dc = document.getElementById('filterSvcDc')?.value || '';
     const tag = document.getElementById('filterSvcTag')?.value || '';
@@ -617,8 +617,6 @@ async function applyServiceFilters() {
     if (search) url += `search=${encodeURIComponent(search)}&`;
 
     const services = await api(url);
-    const container = document.getElementById('servicesContainer');
-    if (!container) return;
 
     if (services.length === 0) {
         container.innerHTML = `<div class="empty-state"><p>Сервисы не найдены</p></div>`;
