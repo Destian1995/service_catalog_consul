@@ -403,59 +403,87 @@ def api_analytics():
                 health_by_dc[dc] = {"passing": 0, "warning": 0, "critical": 0}
             health_by_dc[dc][c["Status"]] = health_by_dc[dc].get(c["Status"], 0) + 1
 
-    # Monitoring coverage
-    basic_monitoring_svcs = {"node-exporter", "consul-agent"}
-    full_monitoring_svcs = {"prometheus", "grafana", "alertmanager", "loki",
-                            "victoria-metrics", "zabbix-agent", "telegraf",
-                            "filebeat", "fluentd", "vector"}
-    monitoring_levels = {"full": [], "basic": [], "none": []}
+    # Monitoring coverage per host
+    # basic = only node-exporter / windows_exporter (base OS metrics)
+    # advanced = more than one monitoring exporter/agent
+    # none = no monitoring services
+    # "full" (полный) = set manually per-IS by admin, not per-host
+    base_exporters = {"node-exporter", "node_exporter", "windows-exporter", "windows_exporter"}
+    all_mon_svcs = base_exporters | {
+        "consul-agent", "consul_agent",
+        "prometheus", "grafana", "alertmanager", "loki",
+        "victoria-metrics", "vmagent", "vmalert",
+        "zabbix-agent", "zabbix_agent", "telegraf",
+        "filebeat", "fluentd", "vector",
+        "blackbox-exporter", "blackbox_exporter",
+        "postgres-exporter", "postgres_exporter",
+        "mysqld-exporter", "mysqld_exporter",
+        "mongodb-exporter", "mongodb_exporter",
+        "process-exporter", "process_exporter",
+        "cadvisor", "node-problem-detector",
+        "pushgateway", "snmp-exporter", "snmp_exporter",
+    }
+
+    monitoring_levels = {"advanced": [], "basic": [], "none": []}
     monitoring_by_dc, monitoring_by_env = {}, {}
+
+    def _classify_host(node_svcs_set):
+        mon_svcs = node_svcs_set & all_mon_svcs
+        if not mon_svcs:
+            return "none"
+        # Only base exporters?
+        if mon_svcs <= base_exporters:
+            return "basic"
+        return "advanced"
 
     if get_mode() == "test":
         for n in nodes:
             node_name = n["Node"]
             node_svcs = {svc["Service"] for svc in TEST_SERVICES if node_name in svc["Nodes"]}
-            has_full = bool(node_svcs & full_monitoring_svcs)
-            has_basic = bool(node_svcs & basic_monitoring_svcs)
-            level = "full" if has_full else ("basic" if has_basic else "none")
+            level = _classify_host(node_svcs)
             monitoring_levels[level].append(node_name)
             dc = n["Datacenter"]
-            if dc not in monitoring_by_dc: monitoring_by_dc[dc] = {"full": 0, "basic": 0, "none": 0}
+            if dc not in monitoring_by_dc: monitoring_by_dc[dc] = {"advanced": 0, "basic": 0, "none": 0}
             monitoring_by_dc[dc][level] += 1
             env = n["Meta"].get("environment", "unknown")
-            if env not in monitoring_by_env: monitoring_by_env[env] = {"full": 0, "basic": 0, "none": 0}
+            if env not in monitoring_by_env: monitoring_by_env[env] = {"advanced": 0, "basic": 0, "none": 0}
             monitoring_by_env[env][level] += 1
     else:
-        # In live mode, use system_dependencies_monitoring metadata
+        # Live mode — classify by services registered on each node
         for n in nodes:
-            raw = n.get("_raw_meta", {})
-            has_mon = raw.get("system_dependencies_monitoring", "").lower() in ("true", "1", "yes")
-            level = "full" if has_mon else "basic"
+            detail = get_node_detail(n["Node"])
+            node_svcs = set()
+            if detail:
+                node_svcs = {s["Service"] for s in detail.get("services", [])}
+            level = _classify_host(node_svcs)
             monitoring_levels[level].append(n["Node"])
             dc = n["Datacenter"]
-            if dc not in monitoring_by_dc: monitoring_by_dc[dc] = {"full": 0, "basic": 0, "none": 0}
+            if dc not in monitoring_by_dc: monitoring_by_dc[dc] = {"advanced": 0, "basic": 0, "none": 0}
             monitoring_by_dc[dc][level] += 1
             env = n["Meta"].get("environment", "unknown")
-            if env not in monitoring_by_env: monitoring_by_env[env] = {"full": 0, "basic": 0, "none": 0}
+            if env not in monitoring_by_env: monitoring_by_env[env] = {"advanced": 0, "basic": 0, "none": 0}
             monitoring_by_env[env][level] += 1
 
     total_nodes = len(nodes)
+    total_monitored = len(monitoring_levels["advanced"]) + len(monitoring_levels["basic"])
     monitoring_summary = {
         "total": total_nodes,
-        "monitored": len(monitoring_levels["full"]) + len(monitoring_levels["basic"]),
-        "full": len(monitoring_levels["full"]),
+        "monitored": total_monitored,
+        "advanced": len(monitoring_levels["advanced"]),
         "basic": len(monitoring_levels["basic"]),
         "none": len(monitoring_levels["none"]),
-        "coverage_pct": round((len(monitoring_levels["full"]) + len(monitoring_levels["basic"])) / total_nodes * 100) if total_nodes else 0,
-        "servers_full": monitoring_levels["full"],
+        "coverage_pct": round(total_monitored / total_nodes * 100) if total_nodes else 0,
+        "servers_advanced": monitoring_levels["advanced"],
         "servers_basic": monitoring_levels["basic"],
         "servers_none": monitoring_levels["none"],
     }
 
     # Hosts by IS + monitoring level per IS
+    # "Полный мониторинг" ИС = отмечено вручную админом
     cfg = load_config()
-    monitored_systems = set(cfg.get("monitored_systems", []))
-    full_servers = set(monitoring_levels["full"])
+    full_systems = set(cfg.get("monitored_systems", []))
+    adv_servers = set(monitoring_levels["advanced"])
+    basic_servers = set(monitoring_levels["basic"])
 
     hosts_by_system = {}
     for n in nodes:
@@ -464,30 +492,28 @@ def api_analytics():
             sys_name = "Unassigned"
         if sys_name not in hosts_by_system:
             hosts_by_system[sys_name] = {"count": 0, "servers": [], "dcs": set(), "envs": set(),
-                                          "full": 0, "basic": 0, "none": 0}
+                                          "advanced": 0, "basic": 0, "none": 0}
         hosts_by_system[sys_name]["count"] += 1
         hosts_by_system[sys_name]["servers"].append(n["Node"])
         hosts_by_system[sys_name]["dcs"].add(n["Datacenter"])
         hosts_by_system[sys_name]["envs"].add(n["Meta"].get("environment", "unknown"))
-        # Per-IS monitoring level
-        if n["Node"] in full_servers:
-            hosts_by_system[sys_name]["full"] += 1
-        elif n["Node"] in set(monitoring_levels["basic"]):
+        if n["Node"] in adv_servers:
+            hosts_by_system[sys_name]["advanced"] += 1
+        elif n["Node"] in basic_servers:
             hosts_by_system[sys_name]["basic"] += 1
         else:
             hosts_by_system[sys_name]["none"] += 1
 
     hosts_by_system_out = {}
     for sys_name, info in sorted(hosts_by_system.items(), key=lambda x: -x[1]["count"]):
-        all_covered = (info["full"] + info["basic"]) == info["count"] and info["count"] > 0
-        # ИС на мониторинге = все хосты покрыты (авто) ИЛИ вручную отмечена
-        is_mon = all_covered or sys_name in monitored_systems
+        all_covered = (info["advanced"] + info["basic"]) == info["count"] and info["count"] > 0
+        is_full = sys_name in full_systems  # полный мониторинг = ручная отметка
         hosts_by_system_out[sys_name] = {
             "count": info["count"], "servers": info["servers"],
             "datacenters": sorted(info["dcs"]), "environments": sorted(info["envs"]),
-            "mon_full": info["full"], "mon_basic": info["basic"], "mon_none": info["none"],
-            "is_monitored": is_mon,
-            "manually_set": sys_name in monitored_systems,
+            "mon_advanced": info["advanced"], "mon_basic": info["basic"], "mon_none": info["none"],
+            "is_monitored": all_covered or is_full,
+            "is_full": is_full,
             "all_covered": all_covered,
         }
 

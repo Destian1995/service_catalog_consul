@@ -878,26 +878,30 @@ function renderMonitoringCards(systems, servicesBySystem) {
     return Object.entries(systems).map(([sysName, info]) => {
         if (sysName === 'Unassigned') return '';
         const svcs = (servicesBySystem || {})[sysName] || [];
-        const checked = info.is_monitored;
+        const isFull = info.is_full;
         const covered = info.all_covered;
+        const adv = info.mon_advanced || 0;
+        const bas = info.mon_basic || 0;
+        const none = info.mon_none || 0;
+        const barPct = info.count > 0 ? Math.round(((adv + bas) / info.count) * 100) : 0;
         return `
-        <div class="system-card ${checked ? 'system-monitored' : ''}"
+        <div class="system-card ${isFull ? 'system-monitored' : ''}"
              data-sysname="${sysName}"
-             data-monitored="${checked ? '1' : '0'}"
+             data-monitored="${isFull ? '1' : '0'}"
              data-envs="${(info.environments || []).join(',')}"
              data-dcs="${(info.datacenters || []).join(',')}"
              id="mon-card-${sysName.replace(/[^a-zA-Z0-9]/g, '_')}">
             <div class="system-card-header">
-                <label class="mon-toggle" onclick="event.stopPropagation()">
-                    <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleSystemMon('${sysName.replace(/'/g, "\\'")}', this.checked)">
+                <label class="mon-toggle" onclick="event.stopPropagation()" title="Полный мониторинг (ручная отметка)">
+                    <input type="checkbox" ${isFull ? 'checked' : ''} onchange="toggleSystemMon('${sysName.replace(/'/g, "\\'")}', this.checked)">
                     <span class="mon-toggle-slider"></span>
                 </label>
                 <div class="system-card-info">
-                    <div class="system-card-name">${sysName}</div>
+                    <div class="system-card-name">${sysName} ${isFull ? '<span class="badge badge-passing" style="font-size:10px;margin-left:6px">полный</span>' : ''}</div>
                     <div class="system-card-meta">
                         ${(info.datacenters || []).map(dc => '<span class="badge badge-dc">' + dc + '</span>').join('')}
                         ${(info.environments || []).map(e => '<span class="badge badge-env">' + e + '</span>').join('')}
-                        ${covered ? '<span class="badge badge-passing" style="font-size:10px">все хосты покрыты</span>' : ''}
+                        ${covered ? '<span class="badge badge-env" style="font-size:10px">все хосты покрыты</span>' : ''}
                     </div>
                 </div>
                 <div class="system-card-count">
@@ -906,12 +910,12 @@ function renderMonitoringCards(systems, servicesBySystem) {
                 </div>
             </div>
             <div class="system-card-bar">
-                <div class="system-card-fill" style="width:${info.count > 0 ? Math.round(((info.mon_full + info.mon_basic) / info.count) * 100) : 0}%"></div>
+                <div class="system-card-fill" style="width:${barPct}%"></div>
             </div>
             <div class="system-card-mon-stats">
-                ${info.mon_full > 0 ? '<span class="inst-badge inst-passing">полный: ' + info.mon_full + '</span>' : ''}
-                ${info.mon_basic > 0 ? '<span class="inst-badge inst-warning">базовый: ' + info.mon_basic + '</span>' : ''}
-                ${info.mon_none > 0 ? '<span class="inst-badge" style="background:rgba(100,116,139,0.1);border:1px solid rgba(100,116,139,0.2);color:var(--text-muted)">нет: ' + info.mon_none + '</span>' : ''}
+                ${adv > 0 ? '<span class="inst-badge inst-passing">продвинутый: ' + adv + '</span>' : ''}
+                ${bas > 0 ? '<span class="inst-badge inst-warning">базовый: ' + bas + '</span>' : ''}
+                ${none > 0 ? '<span class="inst-badge" style="background:rgba(100,116,139,0.1);border:1px solid rgba(100,116,139,0.2);color:var(--text-muted)">нет: ' + none + '</span>' : ''}
             </div>
             <div class="system-card-details">
                 <div class="system-detail-group">
@@ -1013,13 +1017,13 @@ async function renderAnalytics() {
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
                         </div>
                         <div>
-                            <div class="mon-level-title">Полный мониторинг</div>
-                            <div class="mon-level-desc">Метрики + Логи + Алерты + Дашборды</div>
+                            <div class="mon-level-title">Продвинутый мониторинг</div>
+                            <div class="mon-level-desc">Несколько экспортеров / агентов мониторинга</div>
                         </div>
-                        <span class="mon-level-count">${mon.full}</span>
+                        <span class="mon-level-count">${mon.advanced}</span>
                     </div>
-                    <div class="mon-level-bar"><div class="mon-level-fill mon-full-fill" style="width:${mon.total ? Math.round(mon.full / mon.total * 100) : 0}%"></div></div>
-                    <div class="mon-level-servers">${mon.servers_full.map(s => `<span class="tag">${s}</span>`).join('')}</div>
+                    <div class="mon-level-bar"><div class="mon-level-fill mon-full-fill" style="width:${mon.total ? Math.round(mon.advanced / mon.total * 100) : 0}%"></div></div>
+                    <div class="mon-level-servers">${(mon.servers_advanced || []).map(s => `<span class="tag">${s}</span>`).join('')}</div>
                 </div>
                 <div class="mon-level-card mon-basic">
                     <div class="mon-level-header">
@@ -1028,12 +1032,12 @@ async function renderAnalytics() {
                         </div>
                         <div>
                             <div class="mon-level-title">Базовый мониторинг</div>
-                            <div class="mon-level-desc">Только Node Exporter + Consul Agent</div>
+                            <div class="mon-level-desc">Только node_exporter / windows_exporter</div>
                         </div>
                         <span class="mon-level-count">${mon.basic}</span>
                     </div>
                     <div class="mon-level-bar"><div class="mon-level-fill mon-basic-fill" style="width:${mon.total ? Math.round(mon.basic / mon.total * 100) : 0}%"></div></div>
-                    <div class="mon-level-servers">${mon.servers_basic.map(s => `<span class="tag">${s}</span>`).join('')}</div>
+                    <div class="mon-level-servers">${(mon.servers_basic || []).map(s => `<span class="tag">${s}</span>`).join('')}</div>
                 </div>
                 ${mon.none > 0 ? `
                 <div class="mon-level-card mon-none">
@@ -1231,7 +1235,7 @@ function drawMonitoringRing(canvasId, mon) {
     ctx.scale(dpr, dpr);
     const cx = size / 2, cy = size / 2, outerR = size / 2 - 6, innerR = outerR * 0.72;
     const total = mon.total || 1;
-    const segments = [{ val: mon.full, color: '#10b981' }, { val: mon.basic, color: '#f59e0b' }, { val: mon.none, color: '#334155' }];
+    const segments = [{ val: mon.advanced, color: '#10b981' }, { val: mon.basic, color: '#f59e0b' }, { val: mon.none, color: '#334155' }];
     ctx.beginPath(); ctx.arc(cx, cy, outerR, 0, Math.PI * 2); ctx.arc(cx, cy, innerR, Math.PI * 2, 0, true); ctx.closePath(); ctx.fillStyle = 'rgba(255,255,255,0.03)'; ctx.fill();
     let startAngle = -Math.PI / 2;
     segments.forEach(seg => { if (seg.val === 0) return; const a = (seg.val / total) * Math.PI * 2; ctx.beginPath(); ctx.arc(cx, cy, outerR, startAngle, startAngle + a); ctx.arc(cx, cy, innerR, startAngle + a, startAngle, true); ctx.closePath(); ctx.fillStyle = seg.color; ctx.fill(); startAngle += a; });
@@ -1247,8 +1251,8 @@ function drawMonitoringStackedBar(canvasId, dataObj) {
     const entries = Object.entries(dataObj);
     const barH = 36, gap = 14, labelW = 140, padTop = 8, padBottom = 30;
     const totalH = padTop + entries.length * (barH + gap) - gap + padBottom;
-    const levelColors = { full: '#10b981', basic: '#f59e0b', none: '#334155' };
-    const levelLabels = { full: 'Полный', basic: 'Базовый', none: 'Нет' };
+    const levelColors = { advanced: '#10b981', basic: '#f59e0b', none: '#334155' };
+    const levelLabels = { advanced: 'Продвинутый', basic: 'Базовый', none: 'Нет' };
     const parentW = canvas.parentElement.clientWidth - 40;
     canvas.width = parentW * dpr; canvas.height = totalH * dpr;
     canvas.style.width = parentW + 'px'; canvas.style.height = totalH + 'px';
@@ -1261,10 +1265,10 @@ function drawMonitoringStackedBar(canvasId, dataObj) {
         ctx.fillStyle = '#94a3b8'; ctx.font = "500 12px 'Inter', sans-serif"; ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText(label, labelW - 10, y + barH / 2);
         ctx.fillStyle = 'rgba(255,255,255,0.03)'; roundRect(ctx, labelW, y, barArea, barH, 6); ctx.fill();
         let x = labelW;
-        ['full', 'basic', 'none'].forEach(level => { const val = levels[level] || 0; if (val === 0) return; const w = (val / total) * barArea; ctx.fillStyle = levelColors[level]; roundRect(ctx, x, y, w, barH, x === labelW ? 6 : 0); ctx.fill(); if (w > 28) { ctx.fillStyle = level === 'none' ? '#94a3b8' : '#fff'; ctx.font = "700 12px 'JetBrains Mono', monospace"; ctx.textAlign = 'center'; ctx.fillText(val, x + w / 2, y + barH / 2); } x += w; });
+        ['advanced', 'basic', 'none'].forEach(level => { const val = levels[level] || 0; if (val === 0) return; const w = (val / total) * barArea; ctx.fillStyle = levelColors[level]; roundRect(ctx, x, y, w, barH, x === labelW ? 6 : 0); ctx.fill(); if (w > 28) { ctx.fillStyle = level === 'none' ? '#94a3b8' : '#fff'; ctx.font = "700 12px 'JetBrains Mono', monospace"; ctx.textAlign = 'center'; ctx.fillText(val, x + w / 2, y + barH / 2); } x += w; });
     });
     const ly = totalH - 18; let lx = labelW;
-    ['full', 'basic', 'none'].forEach(level => { ctx.fillStyle = levelColors[level]; roundRect(ctx, lx, ly, 12, 12, 3); ctx.fill(); ctx.fillStyle = '#94a3b8'; ctx.font = "500 11px 'Inter', sans-serif"; ctx.textAlign = 'left'; ctx.fillText(levelLabels[level], lx + 16, ly + 6); lx += ctx.measureText(levelLabels[level]).width + 30; });
+    ['advanced', 'basic', 'none'].forEach(level => { ctx.fillStyle = levelColors[level]; roundRect(ctx, lx, ly, 12, 12, 3); ctx.fill(); ctx.fillStyle = '#94a3b8'; ctx.font = "500 11px 'Inter', sans-serif"; ctx.textAlign = 'left'; ctx.fillText(levelLabels[level], lx + 16, ly + 6); lx += ctx.measureText(levelLabels[level]).width + 30; });
 }
 
 // ─── Кольцевая диаграмма (Donut) ───
