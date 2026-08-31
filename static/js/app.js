@@ -811,9 +811,13 @@ async function renderMonitoring() {
     const el = $('#view-monitoring');
     el.innerHTML = LOADER;
 
-    const data = await api('/api/analytics');
+    const [data, excludedList] = await Promise.all([
+        api('/api/analytics'),
+        api('/api/admin/excluded-systems'),
+    ]);
     const systems = data.hosts_by_system || {};
     const isMon = data.is_monitoring || {};
+    const excludedSet = new Set(excludedList || []);
 
     // Filter controls
     const allEnvs = [...new Set(Object.values(systems).flatMap(s => s.environments))].sort();
@@ -873,6 +877,23 @@ async function renderMonitoring() {
         <div class="systems-panel" id="monSystemsPanel">
             ${renderMonitoringCards(systems, data.services_by_system)}
         </div>
+
+        ${excludedSet.size > 0 ? `
+        <div class="section-title" style="margin-top:32px">Исключённые ИС</div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Эти ИС скрыты из всех разделов портала. Нажмите «Вернуть», чтобы включить обратно.</p>
+        <div class="systems-panel">
+            ${[...excludedSet].sort().map(name => `
+                <div class="system-card" style="border-color:var(--critical-border);opacity:0.7">
+                    <div class="system-card-header">
+                        <div class="system-card-icon" style="background:var(--critical-bg);border-color:var(--critical-border);color:var(--critical)">X</div>
+                        <div class="system-card-info">
+                            <div class="system-card-name" style="text-decoration:line-through;color:var(--text-muted)">${name}</div>
+                        </div>
+                        <button class="btn btn-secondary" style="font-size:11px;padding:4px 12px" onclick="toggleExcludeSystem('${name.replace(/'/g, "\\'")}')">Вернуть</button>
+                    </div>
+                </div>
+            `).join('')}
+        </div>` : ''}
     `;
 }
 
@@ -931,6 +952,9 @@ function renderMonitoringCards(systems, servicesBySystem) {
                     <div class="system-detail-tags">${info.servers.map(s => '<span class="tag">' + s + '</span>').join('')}</div>
                 </div>
                 ${svcs.length > 0 ? '<div class="system-detail-group"><span class="system-detail-label">Сервисы</span><div class="system-detail-tags">' + svcs.map(s => '<span class="tag ' + getTagClass(s) + '">' + s + '</span>').join('') + '</div></div>' : ''}
+                <div style="margin-top:8px;text-align:right">
+                    <button class="btn btn-danger" style="font-size:11px;padding:3px 10px" onclick="event.stopPropagation();toggleExcludeSystem('${sysName.replace(/'/g, "\\'")}')">Исключить из каталога</button>
+                </div>
             </div>
         </div>`;
     }).join('');
@@ -948,11 +972,22 @@ async function toggleSystemMon(sysName, isChecked) {
             card.classList.toggle('system-monitored', isChecked);
             card.dataset.monitored = isChecked ? '1' : '0';
         }
-        // Also update analytics card if exists
-        const aCard = document.getElementById('sys-card-' + sysName.replace(/[^a-zA-Z0-9]/g, '_'));
-        if (aCard) aCard.classList.toggle('system-monitored', isChecked);
     } catch(e) {
         console.error('Toggle error:', e);
+    }
+}
+
+async function toggleExcludeSystem(sysName) {
+    if (!confirm('Исключить ИС «' + sysName + '» из каталога? Её хосты не будут отображаться нигде.')) return;
+    try {
+        await fetch('/api/admin/toggle-excluded-system', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({system_name: sysName})
+        });
+        // Reload the whole tab to reflect changes
+        renderMonitoring();
+    } catch(e) {
+        console.error('Exclude error:', e);
     }
 }
 

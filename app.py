@@ -51,13 +51,20 @@ def save_config(cfg):
 def get_mode():
     return load_config().get("mode", "test")
 
+def _exclude_systems(nodes):
+    """Remove nodes belonging to excluded systems."""
+    excluded = set(load_config().get("excluded_systems", []))
+    if not excluded:
+        return nodes
+    return [n for n in nodes if (n["Meta"].get("system_name") or "").strip() not in excluded]
+
 # ──────────────────────────────────────
 # Data providers: test vs live
 # ──────────────────────────────────────
 
 def _test_nodes(filters=None):
     from test_data import NODES
-    result = NODES[:]
+    result = _exclude_systems(NODES[:])
     if filters:
         if filters.get("dc"):
             result = [n for n in result if n["Datacenter"] == filters["dc"]]
@@ -75,7 +82,7 @@ def _test_nodes(filters=None):
 def _live_nodes(filters=None):
     from consul_client import ConsulAggregator
     agg = ConsulAggregator(load_config())
-    result = agg.get_all_nodes()
+    result = _exclude_systems(agg.get_all_nodes())
     if filters:
         if filters.get("dc"):
             result = [n for n in result if n["Datacenter"] == filters["dc"]]
@@ -751,6 +758,26 @@ def admin_toggle_monitored_system():
     save_config(cfg)
     return jsonify({"ok": True, "is_monitored": system_name in monitored,
                     "systems": cfg["monitored_systems"]})
+
+@app.route("/api/admin/excluded-systems", methods=["GET"])
+def admin_get_excluded():
+    return jsonify(load_config().get("excluded_systems", []))
+
+@app.route("/api/admin/toggle-excluded-system", methods=["POST"])
+def admin_toggle_excluded():
+    """Toggle a single IS in excluded list."""
+    system_name = request.json.get("system_name", "")
+    if not system_name:
+        return jsonify({"error": "system_name required"}), 400
+    cfg = load_config()
+    excluded = set(cfg.get("excluded_systems", []))
+    if system_name in excluded:
+        excluded.discard(system_name)
+    else:
+        excluded.add(system_name)
+    cfg["excluded_systems"] = sorted(excluded)
+    save_config(cfg)
+    return jsonify({"ok": True, "is_excluded": system_name in excluded})
 
 # ──────────────────────────────────────
 # Serve SPA + Admin
