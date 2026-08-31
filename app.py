@@ -12,7 +12,7 @@ from flask_cors import CORS
 
 # ── Logging ──
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
@@ -24,16 +24,29 @@ app = Flask(__name__, static_folder="static")
 CORS(app)
 
 # ──────────────────────────────────────
-# Config management
+# Config management (cached in memory)
 # ──────────────────────────────────────
 
+_config_cache = {"data": None, "mtime": 0}
+
 def load_config():
+    """Read config from disk, cached until file changes."""
+    try:
+        mtime = os.path.getmtime(CONFIG_PATH)
+    except OSError:
+        mtime = 0
+    if _config_cache["data"] is not None and mtime == _config_cache["mtime"]:
+        return _config_cache["data"]
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+        cfg = json.load(f)
+    _config_cache["data"] = cfg
+    _config_cache["mtime"] = mtime
+    return cfg
 
 def save_config(cfg):
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=4, ensure_ascii=False)
+    _config_cache["data"] = None  # invalidate cache
 
 def get_mode():
     return load_config().get("mode", "test")
@@ -225,11 +238,29 @@ def api_health_summary():
         from test_data import build_health_checks
         checks = build_health_checks()
     else:
+        from consul_client import ConsulAggregator
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        agg = ConsulAggregator(load_config())
         checks = []
-        for n in nodes:
-            detail = get_node_detail(n["Node"])
-            if detail:
-                checks.extend(detail.get("checks", []))
+        # Parallel health check fetch instead of sequential N+1
+        def _fetch_checks(client, node_name):
+            return client.get_health_checks(node_name)
+
+        with ThreadPoolExecutor(max_workers=20) as pool:
+            futures = []
+            for n in nodes:
+                node_name = n["Node"]
+                # Find the right DC client
+                for client in agg.clients:
+                    if client.dc_name == n.get("Datacenter"):
+                        futures.append(pool.submit(_fetch_checks, client, node_name))
+                        break
+            for f in as_completed(futures):
+                try:
+                    checks.extend(f.result())
+                except Exception:
+                    pass
+
     summary = {"passing": 0, "warning": 0, "critical": 0, "total_services": 0, "total_nodes": len(nodes)}
     svc_names = set()
     for c in checks:
@@ -573,6 +604,16 @@ def admin_page():
 def static_files(path):
     return send_from_directory("static", path)
 
+
+def _start_warmer():
+    """Start background cache warmer if in live mode."""
+    try:
+        from consul_client import start_cache_warmer
+        start_cache_warmer(load_config)
+    except Exception as e:
+        log.error(f"Failed to start cache warmer: {e}")
+
+_start_warmer()
 
 if __name__ == "__main__":
     cfg = load_config()
