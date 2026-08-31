@@ -6,8 +6,17 @@
 
 import os
 import json
+import logging
 from flask import Flask, jsonify, request, send_from_directory, session, redirect
 from flask_cors import CORS
+
+# ── Logging ──
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+log = logging.getLogger("app")
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "consul_manager_config.json")
 
@@ -466,6 +475,45 @@ def admin_set_mode():
     cfg["mode"] = new_mode
     save_config(cfg)
     return jsonify({"ok": True, "mode": new_mode})
+
+@app.route("/api/admin/diagnose")
+def admin_diagnose():
+    """Full diagnostic: test every DC, try fetching nodes."""
+    cfg = load_config()
+    mode = cfg.get("mode", "test")
+    results = {"mode": mode, "clusters": [], "errors": []}
+
+    if mode == "test":
+        from test_data import NODES
+        results["test_nodes"] = len(NODES)
+        return jsonify(results)
+
+    from consul_client import ConsulAggregator
+    agg = ConsulAggregator(cfg)
+
+    # Test connectivity
+    connectivity = agg.test_all()
+    for r in connectivity:
+        results["clusters"].append(r)
+        if not r.get("ok"):
+            results["errors"].append(f"DC '{r['dc']}': {r.get('error', 'HTTP ' + str(r.get('status', '?')))}")
+
+    # Try fetching nodes
+    try:
+        nodes = agg.get_all_nodes()
+        results["total_nodes"] = len(nodes)
+        if nodes:
+            results["sample_node"] = {
+                "Node": nodes[0]["Node"],
+                "Address": nodes[0]["Address"],
+                "DC": nodes[0]["Datacenter"],
+                "Meta_keys": list(nodes[0].get("_raw_meta", {}).keys())[:15],
+            }
+    except Exception as e:
+        results["errors"].append(f"get_all_nodes: {type(e).__name__}: {e}")
+        results["total_nodes"] = 0
+
+    return jsonify(results)
 
 @app.route("/api/admin/test-connection", methods=["POST"])
 def admin_test_connection():

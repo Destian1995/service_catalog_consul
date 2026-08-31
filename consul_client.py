@@ -4,6 +4,7 @@ Adapts real Consul metadata (system_name, system_environment, etc.)
 to the internal format used by the portal.
 """
 
+import logging
 import requests
 import urllib3
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -12,6 +13,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 DEFAULT_TIMEOUT = 10
+
+log = logging.getLogger("consul_client")
 
 
 class ConsulClient:
@@ -25,23 +28,43 @@ class ConsulClient:
         self.headers = {}
         if token:
             self.headers["X-Consul-Token"] = token
+        log.info(f"[DC:{dc_name}] Client init: {self.base_url}, token={'YES' if token else 'NO'}, verify_ssl={verify_ssl}")
 
     def _get(self, path, params=None):
         url = f"{self.base_url}/v1{path}"
+        log.debug(f"[DC:{self.dc_name}] GET {url}")
         try:
             r = requests.get(url, headers=self.headers, params=params,
                              verify=self.verify, timeout=DEFAULT_TIMEOUT)
+            log.info(f"[DC:{self.dc_name}] {url} -> HTTP {r.status_code} ({len(r.content)} bytes)")
             r.raise_for_status()
-            return r.json()
+            data = r.json()
+            if isinstance(data, list):
+                log.info(f"[DC:{self.dc_name}] {path} returned {len(data)} items")
+            return data
+        except requests.exceptions.SSLError as e:
+            log.error(f"[DC:{self.dc_name}] SSL ERROR {url}: {e}")
+            return None
+        except requests.exceptions.ConnectionError as e:
+            log.error(f"[DC:{self.dc_name}] CONNECTION ERROR {url}: {e}")
+            return None
+        except requests.exceptions.Timeout as e:
+            log.error(f"[DC:{self.dc_name}] TIMEOUT {url}: {e}")
+            return None
+        except requests.exceptions.HTTPError as e:
+            log.error(f"[DC:{self.dc_name}] HTTP ERROR {url}: {r.status_code} {r.text[:200]}")
+            return None
         except Exception as e:
-            print(f"[Consul] Error fetching {url}: {e}")
+            log.error(f"[DC:{self.dc_name}] UNEXPECTED ERROR {url}: {type(e).__name__}: {e}")
             return None
 
     def get_nodes(self):
         """GET /v1/catalog/nodes"""
         raw = self._get("/catalog/nodes")
         if not raw:
+            log.warning(f"[DC:{self.dc_name}] get_nodes returned empty/None")
             return []
+        log.info(f"[DC:{self.dc_name}] Fetched {len(raw)} nodes")
         nodes = []
         for n in raw:
             meta = n.get("Meta") or {}
@@ -84,6 +107,7 @@ class ConsulClient:
                 "Port": svc.get("Port", 0),
                 "Meta": svc.get("Meta") or {},
             })
+        log.info(f"[DC:{self.dc_name}] Node {node_name}: {len(services)} services")
         return {"services": services, "node_raw": raw.get("Node")}
 
     def get_health_checks(self, node_name):
@@ -113,6 +137,17 @@ class ConsulClient:
         """GET /v1/health/service/:service"""
         return self._get(f"/health/service/{service_name}") or []
 
+    def test_connectivity(self):
+        """Test basic connectivity — GET /v1/status/leader"""
+        url = f"{self.base_url}/v1/status/leader"
+        try:
+            r = requests.get(url, headers=self.headers,
+                             verify=self.verify, timeout=5)
+            return {"ok": r.ok, "status": r.status_code, "leader": r.text.strip(),
+                    "url": self.base_url}
+        except Exception as e:
+            return {"ok": False, "error": str(e), "url": self.base_url}
+
 
 class ConsulAggregator:
     """Aggregates data from multiple Consul DCs across clusters."""
@@ -121,8 +156,11 @@ class ConsulAggregator:
         self.config = config
         self.clients = []
         clusters = config.get("clusters", {})
+        log.info(f"Aggregator init: {len(clusters)} clusters")
         for cluster_id, cluster in clusters.items():
-            for dc in cluster.get("datacenters", []):
+            dcs = cluster.get("datacenters", [])
+            log.info(f"  Cluster '{cluster_id}': {len(dcs)} DCs")
+            for dc in dcs:
                 self.clients.append(ConsulClient(
                     host=dc["host"],
                     token=dc.get("token", ""),
@@ -134,12 +172,21 @@ class ConsulAggregator:
     def get_all_nodes(self):
         """Fetch nodes from all DCs in parallel."""
         all_nodes = []
+        log.info(f"Fetching nodes from {len(self.clients)} DCs...")
         with ThreadPoolExecutor(max_workers=10) as pool:
             futures = {pool.submit(c.get_nodes): c for c in self.clients}
             for f in as_completed(futures):
-                nodes = f.result()
-                if nodes:
-                    all_nodes.extend(nodes)
+                client = futures[f]
+                try:
+                    nodes = f.result()
+                    if nodes:
+                        log.info(f"  DC '{client.dc_name}': {len(nodes)} nodes OK")
+                        all_nodes.extend(nodes)
+                    else:
+                        log.warning(f"  DC '{client.dc_name}': 0 nodes (empty result)")
+                except Exception as e:
+                    log.error(f"  DC '{client.dc_name}': EXCEPTION {e}")
+        log.info(f"Total nodes fetched: {len(all_nodes)}")
         return all_nodes
 
     def get_node_detail(self, node_name):
@@ -160,7 +207,6 @@ class ConsulAggregator:
                 if svc_name not in seen:
                     seen[svc_name] = {"name": svc_name, "tags": set(), "instances": 0, "ports": set()}
                 seen[svc_name]["tags"].update(tags or [])
-                # Get instance count via health endpoint
                 health = client.get_service_health(svc_name)
                 seen[svc_name]["instances"] += len(health)
                 for h in health:
@@ -239,3 +285,12 @@ class ConsulAggregator:
         for c in self.clients:
             dcs.add(c.dc_name)
         return sorted(dcs)
+
+    def test_all(self):
+        """Test connectivity to all DCs."""
+        results = []
+        for client in self.clients:
+            res = client.test_connectivity()
+            res["dc"] = client.dc_name
+            results.append(res)
+        return results
