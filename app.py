@@ -479,13 +479,16 @@ def api_analytics():
 
     hosts_by_system_out = {}
     for sys_name, info in sorted(hosts_by_system.items(), key=lambda x: -x[1]["count"]):
-        all_monitored = (info["full"] + info["basic"]) == info["count"] and info["count"] > 0
+        all_covered = (info["full"] + info["basic"]) == info["count"] and info["count"] > 0
+        # ИС на мониторинге = все хосты покрыты (авто) ИЛИ вручную отмечена
+        is_mon = all_covered or sys_name in monitored_systems
         hosts_by_system_out[sys_name] = {
             "count": info["count"], "servers": info["servers"],
             "datacenters": sorted(info["dcs"]), "environments": sorted(info["envs"]),
             "mon_full": info["full"], "mon_basic": info["basic"], "mon_none": info["none"],
-            "is_monitored": sys_name in monitored_systems,
-            "all_covered": all_monitored,
+            "is_monitored": is_mon,
+            "manually_set": sys_name in monitored_systems,
+            "all_covered": all_covered,
         }
 
     # Services per system
@@ -504,7 +507,8 @@ def api_analytics():
 
     # IS monitoring summary
     total_is = len([s for s in hosts_by_system if s != "Unassigned"])
-    monitored_is_count = len([s for s in hosts_by_system_out if hosts_by_system_out[s]["is_monitored"]])
+    monitored_is_count = len([s for s in hosts_by_system_out
+                              if hosts_by_system_out[s]["is_monitored"] and s != "Unassigned"])
     fully_covered_is = len([s for s in hosts_by_system_out
                             if hosts_by_system_out[s]["all_covered"] and s != "Unassigned"])
 
