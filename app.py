@@ -76,7 +76,9 @@ def _test_nodes(filters=None):
             result = [n for n in result if n["Meta"].get("system_name") == filters["system_name"]]
         if filters.get("search"):
             s = filters["search"].lower()
-            result = [n for n in result if s in n["Node"].lower() or s in n["Address"]]
+            result = [n for n in result if s in n["Node"].lower()
+                      or s in n["Address"]
+                      or s in (n["Meta"].get("system_name") or "").lower()]
     return result
 
 def _live_nodes(filters=None):
@@ -94,7 +96,9 @@ def _live_nodes(filters=None):
             result = [n for n in result if n["Meta"].get("system_name") == filters["system_name"]]
         if filters.get("search"):
             s = filters["search"].lower()
-            result = [n for n in result if s in n["Node"].lower() or s in n["Address"]]
+            result = [n for n in result if s in n["Node"].lower()
+                      or s in n["Address"]
+                      or s in (n["Meta"].get("system_name") or "").lower()]
     return result
 
 def get_nodes(filters=None):
@@ -316,6 +320,29 @@ def api_health_details():
         })
 
     return jsonify(results)
+
+@app.route("/api/search")
+def api_global_search():
+    q = request.args.get("q", "").lower().strip()
+    if len(q) < 2:
+        return jsonify({"servers": [], "services": [], "systems": []})
+    # Search servers
+    nodes = get_nodes()
+    matched_nodes = [{"Node": n["Node"], "Address": n["Address"],
+                      "Datacenter": n["Datacenter"],
+                      "system_name": n["Meta"].get("system_name", "-")}
+                     for n in nodes if q in n["Node"].lower()
+                     or q in n["Address"]
+                     or q in (n["Meta"].get("system_name") or "").lower()][:20]
+    # Search services
+    services = get_services()
+    matched_svcs = [{"name": s["name"], "instances": s["instances"]}
+                    for s in services if q in s["name"].lower()][:20]
+    # Search IS names
+    all_sys = sorted({n["Meta"].get("system_name", "") for n in nodes
+                      if n["Meta"].get("system_name") and n["Meta"]["system_name"] != "-"})
+    matched_sys = [s for s in all_sys if q in s.lower()][:20]
+    return jsonify({"servers": matched_nodes, "services": matched_svcs, "systems": matched_sys})
 
 @app.route("/api/tags")
 def api_tags():

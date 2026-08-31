@@ -83,10 +83,75 @@ function toggleSidebar() {
     }
 }
 
+let _searchTimer = null;
 function onGlobalSearch(val) {
-    if (currentView === 'servers') applyServerFilters();
-    else if (currentView === 'services') applyServiceFilters();
+    clearTimeout(_searchTimer);
+    const dropdown = document.getElementById('searchDropdown');
+    if (!val || val.length < 2) {
+        if (dropdown) dropdown.style.display = 'none';
+        return;
+    }
+    _searchTimer = setTimeout(async () => {
+        const data = await api('/api/search?q=' + encodeURIComponent(val));
+        renderSearchDropdown(data);
+    }, 300);
 }
+
+function renderSearchDropdown(data) {
+    let dropdown = document.getElementById('searchDropdown');
+    if (!dropdown) {
+        dropdown = document.createElement('div');
+        dropdown.id = 'searchDropdown';
+        dropdown.className = 'search-dropdown';
+        document.querySelector('.search-global').appendChild(dropdown);
+    }
+
+    const hasResults = data.systems.length || data.servers.length || data.services.length;
+    if (!hasResults) {
+        dropdown.innerHTML = '<div class="search-empty">Ничего не найдено</div>';
+        dropdown.style.display = 'block';
+        return;
+    }
+
+    let html = '';
+    if (data.systems.length) {
+        html += '<div class="search-group-title">Информационные системы</div>';
+        html += data.systems.map(s =>
+            '<div class="search-item" onclick="globalSearchGo(\'monitoring\',\'' + s.replace(/'/g, "\\'") + '\')">' +
+            '<span class="badge badge-system">' + s + '</span></div>'
+        ).join('');
+    }
+    if (data.servers.length) {
+        html += '<div class="search-group-title">Серверы</div>';
+        html += data.servers.map(n =>
+            '<div class="search-item" onclick="globalSearchGo(\'servers\',\'' + n.Node.replace(/'/g, "\\'") + '\')">' +
+            '<span class="search-item-name">' + n.Node + '</span>' +
+            '<span class="search-item-meta">' + n.Address + ' &middot; ' + n.system_name + '</span></div>'
+        ).join('');
+    }
+    if (data.services.length) {
+        html += '<div class="search-group-title">Экспортеры</div>';
+        html += data.services.map(s =>
+            '<div class="search-item" onclick="globalSearchGo(\'services\',\'' + s.name.replace(/'/g, "\\'") + '\')">' +
+            '<span class="search-item-name">' + s.name + '</span>' +
+            '<span class="search-item-meta">' + s.instances + ' экз.</span></div>'
+        ).join('');
+    }
+    dropdown.innerHTML = html;
+    dropdown.style.display = 'block';
+}
+
+function globalSearchGo(view, query) {
+    document.getElementById('searchDropdown').style.display = 'none';
+    document.getElementById('globalSearch').value = query;
+    navigate(view);
+}
+
+// Close dropdown on click outside
+document.addEventListener('click', function(e) {
+    const dd = document.getElementById('searchDropdown');
+    if (dd && !e.target.closest('.search-global')) dd.style.display = 'none';
+});
 
 async function refreshData() {
     // Clear drill-down cache on manual refresh
