@@ -701,6 +701,29 @@ def admin_set_mode():
     save_config(cfg)
     return jsonify({"ok": True, "mode": new_mode})
 
+@app.route("/api/admin/debug-service/<service_name>")
+def admin_debug_service(service_name):
+    """Show raw Consul API response for a service — for debugging."""
+    if get_mode() == "test":
+        return jsonify({"error": "Only in live mode"})
+    from consul_client import ConsulAggregator
+    agg = ConsulAggregator(load_config())
+    raw_results = []
+    for client in agg.clients:
+        raw = client._get(f"/health/service/{service_name}")
+        if raw:
+            for entry in raw:
+                raw_results.append({
+                    "dc": client.dc_name,
+                    "node": (entry.get("Node") or {}).get("Node", "?"),
+                    "node_address": (entry.get("Node") or {}).get("Address", "?"),
+                    "service_id": (entry.get("Service") or {}).get("ID", "?"),
+                    "service_port": (entry.get("Service") or {}).get("Port", 0),
+                    "service_tags": (entry.get("Service") or {}).get("Tags", []),
+                    "checks_count": len(entry.get("Checks") or []),
+                })
+    return jsonify({"service": service_name, "instances": len(raw_results), "data": raw_results})
+
 @app.route("/api/admin/diagnose")
 def admin_diagnose():
     """Full diagnostic: test every DC, try fetching nodes."""
