@@ -218,15 +218,14 @@ class ConsulAggregator:
         return {"services": [], "checks": []}
 
     def get_all_services(self):
-        """Fast service list — uses only /catalog/services (1 req per DC).
-        Does NOT fetch health per service. Instances count = 0 (filled on detail)."""
+        """Service list with instance counts from /catalog/service/:name."""
         cached = _cache.get("all_services")
         if cached is not None:
             return cached
 
         seen = {}
         t0 = time.monotonic()
-        # Parallel catalog fetch — one request per DC
+        # Step 1: get service names + tags from catalog (1 req per DC)
         with ThreadPoolExecutor(max_workers=10) as pool:
             futures = {pool.submit(c.get_services_catalog): c for c in self.clients}
             for f in as_completed(futures):
@@ -238,6 +237,30 @@ class ConsulAggregator:
                         seen[svc_name]["tags"].update(tags or [])
                 except Exception as e:
                     log.error(f"get_all_services catalog: {e}")
+
+        # Step 2: count instances per service via /catalog/service/:name (parallel)
+        def _count_svc(svc_name):
+            total = 0
+            ports = set()
+            for client in self.clients:
+                raw = client._get(f"/catalog/service/{svc_name}")
+                if raw:
+                    total += len(raw)
+                    for entry in raw:
+                        p = entry.get("ServicePort", 0)
+                        if p:
+                            ports.add(p)
+            return svc_name, total, ports
+
+        with ThreadPoolExecutor(max_workers=20) as pool:
+            futures = [pool.submit(_count_svc, name) for name in seen]
+            for f in as_completed(futures):
+                try:
+                    name, count, ports = f.result()
+                    seen[name]["instances"] = count
+                    seen[name]["ports"].update(ports)
+                except Exception:
+                    pass
 
         result = sorted([
             {"name": d["name"], "tags": sorted(d["tags"]), "instances": d["instances"], "ports": sorted(d["ports"])}
