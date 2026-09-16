@@ -1254,12 +1254,28 @@ def api_architecture():
             if sn in mon_systems:
                 is_stats[sn]["has_monitoring"] = True
 
-        # Match arch nodes to IS
+        # Match arch nodes to IS (with aliases for non-obvious names)
+        arch_aliases = cfg.get("arch_aliases", {})
+        # Default aliases
+        default_aliases = {
+            "Website": ["aton.ru", "web-сайт ооо атон", "web-сайт атон", "сайт атон"],
+        }
+        for k, v in default_aliases.items():
+            if k not in arch_aliases:
+                arch_aliases[k] = v
+
         is_lower = {k.lower(): k for k in is_stats}
         for node in arch.get("nodes", []):
             label_l = (node.get("label") or "").lower()
             id_l = (node.get("id") or "").lower()
             matched = is_lower.get(label_l) or is_lower.get(id_l)
+            # Check aliases
+            if not matched:
+                node_aliases = arch_aliases.get(node.get("id"), [])
+                for alias in node_aliases:
+                    matched = is_lower.get(alias.lower())
+                    if matched:
+                        break
             if matched:
                 st = is_stats[matched]
                 node["mon_servers"] = st["servers"]
