@@ -455,7 +455,7 @@ async function renderServers() {
     const globalSearch = $('#globalSearch').value || '';
 
     el.innerHTML = `
-        <h2 class="page-title">Серверы</h2>
+        <h2 class="page-title">Серверы <span id="serversCount" class="page-count"></span></h2>
         <div class="filter-bar">
             <div class="filter-group">
                 <span class="filter-label">ИС</span>
@@ -525,6 +525,8 @@ async function applyServerFilters() {
     if (search) url += `search=${encodeURIComponent(search)}&`;
 
     const nodes = await api(url);
+    const countEl = document.getElementById('serversCount');
+    if (countEl) countEl.textContent = nodes.length;
 
     if (nodes.length === 0) {
         container.innerHTML = `<div class="empty-state"><p>Серверы не найдены</p></div>`;
@@ -693,7 +695,7 @@ async function renderServices() {
     const globalSearch = $('#globalSearch').value || '';
 
     el.innerHTML = `
-        <h2 class="page-title">Экспортеры</h2>
+        <h2 class="page-title">Экспортеры <span id="exportersCount" class="page-count"></span></h2>
         <div class="filter-bar">
             <div class="filter-group">
                 <span class="filter-label">ДЦ</span>
@@ -733,6 +735,9 @@ async function applyServiceFilters() {
     if (search) url += `search=${encodeURIComponent(search)}&`;
 
     const services = await api(url);
+    const totalInstances = services.reduce((s, x) => s + (x.instances || 0), 0);
+    const countEl = document.getElementById('exportersCount');
+    if (countEl) countEl.textContent = services.length + ' / ' + totalInstances + ' экз.';
 
     if (services.length === 0) {
         container.innerHTML = `<div class="empty-state"><p>Экспортеры не найдены</p></div>`;
@@ -1123,15 +1128,36 @@ async function renderInventory() {
         api('/api/systems'),
     ]);
 
-    // SLA table
+    // SLA table with expandable problem details
+    let slaIdx = 0;
     const slaRows = Object.entries(sla)
         .sort((a, b) => a[1].sla_pct - b[1].sla_pct)
         .map(([name, d]) => {
             const color = d.sla_pct >= 99 ? 'var(--passing)' : d.sla_pct >= 95 ? 'var(--warning)' : 'var(--critical)';
-            return '<tr><td class="cell-name">' + name + '</td>' +
+            const problems = d.problems || [];
+            const hasProblems = problems.length > 0;
+            const rid = 'sla-row-' + (slaIdx++);
+            let row = '<tr' + (hasProblems ? ' class="expandable-row" onclick="toggleRow(\'' + rid + '\',this)"' : '') + '>' +
+                (hasProblems ? '<td>' + chevronIcon() + '</td>' : '<td></td>') +
+                '<td class="cell-name">' + name + '</td>' +
                 '<td class="cell-mono">' + d.total + '</td>' +
                 '<td class="cell-mono">' + d.passing + '</td>' +
-                '<td class="cell-mono" style="color:' + color + '">' + d.sla_pct + '%</td></tr>';
+                '<td class="cell-mono" style="color:' + color + '">' + d.sla_pct + '%</td>' +
+                '<td class="cell-mono" style="color:var(--critical)">' + problems.length + '</td></tr>';
+            if (hasProblems) {
+                row += '<tr class="expand-content" id="' + rid + '"><td colspan="6"><div class="expand-body">' +
+                    problems.map(p =>
+                        '<div class="check-item">' +
+                        '<div class="check-status ' + p.status + '">' + statusIcon(p.status) + '</div>' +
+                        '<div class="check-body">' +
+                        '<div class="check-name">' + p.check + (p.service ? ' <span style="color:var(--text-muted);font-weight:400;font-size:12px">(' + p.service + ')</span>' : '') +
+                        ' <span style="color:var(--text-muted);font-weight:400;font-size:11px">на ' + p.node + '</span></div>' +
+                        '<div class="check-output">' + (p.output || '-') + '</div>' +
+                        '</div></div>'
+                    ).join('') +
+                    '</div></td></tr>';
+            }
+            return row;
         }).join('');
 
     // Owners table
@@ -1187,7 +1213,7 @@ async function renderInventory() {
         <div class="section-title">SLA по информационным системам</div>
         <div class="table-wrapper" style="margin-bottom:24px">
             <table class="data-table">
-                <thead><tr><th style="width:40%">ИС</th><th>Проверки</th><th>Passing</th><th>SLA %</th></tr></thead>
+                <thead><tr><th style="width:32px"></th><th style="width:35%">ИС</th><th>Проверки</th><th>Passing</th><th>SLA %</th><th>Ошибки</th></tr></thead>
                 <tbody>${slaRows}</tbody>
             </table>
         </div>
@@ -1291,10 +1317,6 @@ async function renderAnalytics() {
             <div class="stat-card accent">
                 <div class="stat-label">Всего ИС</div>
                 <div class="stat-value">${isMon.total_is}</div>
-            </div>
-            <div class="stat-card accent">
-                <div class="stat-label">Экспортеров установлено</div>
-                <div class="stat-value">${data.total_exporters_instances || 0}<span style="font-size:14px;color:var(--text-muted);font-weight:400"> / ${data.total_exporters_unique || 0} типов</span></div>
             </div>
             <div class="stat-card passing">
                 <div class="stat-label">Продвинутый мон.</div>

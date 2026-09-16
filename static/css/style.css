@@ -471,6 +471,16 @@ body.sidebar-collapsed .main-content {
     margin-bottom: 24px;
     letter-spacing: -0.02em;
     animation: slideUp 0.3s ease;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+}
+
+.page-count {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
 }
 
 .stats-grid {

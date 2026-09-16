@@ -1080,7 +1080,7 @@ def api_export_csv():
 # ── SLA / uptime snapshot ──
 @app.route("/api/sla")
 def api_sla():
-    """Current SLA snapshot per IS — % of passing checks."""
+    """Current SLA snapshot per IS — % of passing checks + problem details."""
     nodes = get_nodes()
     is_checks = {}
     for n in nodes:
@@ -1090,17 +1090,28 @@ def api_sla():
         detail = get_node_detail(n["Node"])
         if not detail:
             continue
+        if sys_name not in is_checks:
+            is_checks[sys_name] = {"total": 0, "passing": 0, "problems": []}
         for c in detail.get("checks", []):
-            if sys_name not in is_checks:
-                is_checks[sys_name] = {"total": 0, "passing": 0}
             is_checks[sys_name]["total"] += 1
             if c.get("Status") == "passing":
                 is_checks[sys_name]["passing"] += 1
+            else:
+                is_checks[sys_name]["problems"].append({
+                    "node": n["Node"],
+                    "check": c.get("Name", ""),
+                    "status": c.get("Status", ""),
+                    "service": c.get("ServiceName", ""),
+                    "output": (c.get("Output") or "")[:200],
+                })
 
     result = {}
     for sys_name, data in is_checks.items():
         pct = round(data["passing"] / data["total"] * 100, 1) if data["total"] else 100
-        result[sys_name] = {"total": data["total"], "passing": data["passing"], "sla_pct": pct}
+        result[sys_name] = {
+            "total": data["total"], "passing": data["passing"], "sla_pct": pct,
+            "problems": data["problems"][:50],
+        }
     return jsonify(result)
 
 # ── IS comparison ──
