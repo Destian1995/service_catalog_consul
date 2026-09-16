@@ -1215,22 +1215,46 @@ def api_architecture():
     try:
         nodes = get_nodes()
         # Build IS → stats map
+        # Exporter display names
+        exporter_labels = {
+            "node_exporter": "ОС", "node-exporter": "ОС",
+            "windows_exporter": "ОС (Win)", "windows-exporter": "ОС (Win)",
+            "postgres_exporter": "БД PostgreSQL", "postgres-exporter": "БД PostgreSQL",
+            "mysqld_exporter": "БД MySQL", "mysqld-exporter": "БД MySQL",
+            "mongodb_exporter": "БД MongoDB", "mongodb-exporter": "БД MongoDB",
+            "process_exporter": "Процессы", "process-exporter": "Процессы",
+            "blackbox_exporter": "Доступность", "blackbox-exporter": "Доступность",
+            "cadvisor": "Контейнеры",
+            "telegraf": "Телеметрия",
+            "filebeat": "Логи", "fluentd": "Логи", "vector": "Логи",
+            "prometheus": "Метрики", "vmagent": "Метрики",
+            "alertmanager": "Алерты", "vmalert": "Алерты",
+            "grafana": "Дашборды", "loki": "Логи",
+            "snmp_exporter": "SNMP", "snmp-exporter": "SNMP",
+            "consul-agent": "Discovery", "consul_agent": "Discovery",
+        }
+
         is_stats = {}
         for n in nodes:
             sn = (n["Meta"].get("system_name") or "").strip()
             if not sn or sn == "-":
                 continue
             if sn not in is_stats:
-                is_stats[sn] = {"servers": 0, "has_monitoring": False}
+                is_stats[sn] = {"servers": 0, "has_monitoring": False, "exporters": set()}
             is_stats[sn]["servers"] += 1
-        # Also check monitored_systems from config
+            # Collect exporters from node detail (cached)
+            detail = get_node_detail(n["Node"])
+            if detail:
+                for svc in detail.get("services", []):
+                    is_stats[sn]["exporters"].add(svc["Service"])
+
         cfg = load_config()
         mon_systems = set(cfg.get("monitored_systems", []))
         for sn in is_stats:
             if sn in mon_systems:
                 is_stats[sn]["has_monitoring"] = True
 
-        # Match arch nodes to IS by label or id (case-insensitive)
+        # Match arch nodes to IS
         is_lower = {k.lower(): k for k in is_stats}
         for node in arch.get("nodes", []):
             label_l = (node.get("label") or "").lower()
@@ -1240,9 +1264,19 @@ def api_architecture():
                 st = is_stats[matched]
                 node["mon_servers"] = st["servers"]
                 node["mon_status"] = "full" if st["has_monitoring"] else "partial"
+                # Build human-readable monitoring summary
+                tags = set()
+                for exp in st["exporters"]:
+                    lbl = exporter_labels.get(exp)
+                    if lbl:
+                        tags.add(lbl)
+                    elif "exporter" in exp.lower():
+                        tags.add(exp.replace("_", " ").replace("-", " ").title())
+                node["mon_tags"] = sorted(tags)
             else:
                 node["mon_servers"] = 0
                 node["mon_status"] = "none"
+                node["mon_tags"] = []
     except Exception:
         pass
     return jsonify(arch)

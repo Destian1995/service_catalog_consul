@@ -1335,7 +1335,16 @@ function initArchCanvas(nodes, links) {
             const related = links.filter(l => l.from === tooltipNode.id || l.to === tooltipNode.id);
             const ins = related.filter(l => l.to === tooltipNode.id).map(l => nodeMap[l.from]?.label || l.from);
             const outs = related.filter(l => l.from === tooltipNode.id).map(l => nodeMap[l.to]?.label || l.to);
-            const lines = [tooltipNode.label + ' (' + related.length + ' связей)'];
+            const monLabel = tooltipNode.mon_servers > 0
+                ? ' | ' + tooltipNode.mon_servers + ' серв.'
+                : '';
+            const lines = [tooltipNode.label + ' (' + related.length + ' связей' + monLabel + ')'];
+            if (tooltipNode.mon_tags && tooltipNode.mon_tags.length) {
+                const statusText = tooltipNode.mon_status === 'full' ? 'Полный' : 'Частичный';
+                lines.push('Мониторинг [' + statusText + ']: ' + tooltipNode.mon_tags.join(', '));
+            } else if (tooltipNode.mon_status === 'none' && tooltipNode.type !== 'external') {
+                lines.push('Мониторинг: не настроен');
+            }
             if (ins.length) lines.push('← ' + ins.join(', '));
             if (outs.length) lines.push('→ ' + outs.join(', '));
             const fs = 12 / cam.zoom;
