@@ -160,16 +160,23 @@ body {
     width: 20px;
     height: 20px;
     flex-shrink: 0;
+    transition: transform 0.2s;
 }
 
 .nav-item:hover {
     color: var(--text-primary);
     background: rgba(255, 255, 255, 0.04);
+    transform: translateX(4px);
+}
+
+.nav-item:hover svg {
+    transform: scale(1.15);
 }
 
 .nav-item.active {
     color: var(--accent-light);
     background: var(--accent-glow);
+    animation: glowPulse 3s ease-in-out infinite;
 }
 
 .nav-item.active::before {
@@ -389,8 +396,21 @@ body.sidebar-collapsed .main-content {
 
 .btn-icon:hover {
     color: var(--text-primary);
-    border-color: var(--border-light);
+    border-color: var(--accent-border);
     background: var(--bg-card-hover);
+    transform: scale(1.1);
+}
+
+.btn-icon:active {
+    transform: scale(0.95);
+}
+
+.btn-icon:active svg {
+    animation: spin 0.6s ease;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
 }
 
 .btn-icon svg {
@@ -417,6 +437,31 @@ body.sidebar-collapsed .main-content {
     to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+    from { opacity: 0; transform: scale(0.92); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes glowPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+    50% { box-shadow: 0 0 20px 2px rgba(99, 102, 241, 0.15); }
+}
+
+@keyframes countUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
 /* ═══════════════════════════════════════
    Dashboard cards
    ═══════════════════════════════════════ */
@@ -425,6 +470,7 @@ body.sidebar-collapsed .main-content {
     font-weight: 700;
     margin-bottom: 24px;
     letter-spacing: -0.02em;
+    animation: slideUp 0.3s ease;
 }
 
 .stats-grid {
@@ -441,14 +487,27 @@ body.sidebar-collapsed .main-content {
     padding: 20px;
     position: relative;
     overflow: hidden;
-    transition: all 0.25s;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    animation: slideUp 0.4s ease backwards;
 }
+
+.stats-grid .stat-card:nth-child(1) { animation-delay: 0s; }
+.stats-grid .stat-card:nth-child(2) { animation-delay: 0.06s; }
+.stats-grid .stat-card:nth-child(3) { animation-delay: 0.12s; }
+.stats-grid .stat-card:nth-child(4) { animation-delay: 0.18s; }
+.stats-grid .stat-card:nth-child(5) { animation-delay: 0.24s; }
+.stats-grid .stat-card:nth-child(6) { animation-delay: 0.30s; }
 
 .stat-card:hover {
     border-color: var(--border-light);
-    transform: translateY(-2px);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    transform: translateY(-4px) scale(1.02);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
 }
+
+.stat-card.passing:hover { box-shadow: 0 8px 32px rgba(16, 185, 129, 0.15); }
+.stat-card.warning:hover { box-shadow: 0 8px 32px rgba(245, 158, 11, 0.15); }
+.stat-card.critical:hover { box-shadow: 0 8px 32px rgba(239, 68, 68, 0.15); }
+.stat-card.accent:hover { box-shadow: 0 8px 32px rgba(99, 102, 241, 0.15); }
 
 .stat-card::before {
     content: '';
@@ -583,6 +642,8 @@ body.sidebar-collapsed .main-content {
     font-weight: 700;
     font-family: 'JetBrains Mono', monospace;
     letter-spacing: -0.03em;
+    animation: countUp 0.5s ease backwards;
+    animation-delay: 0.2s;
 }
 
 .stat-card.passing .stat-value { color: var(--passing); }
@@ -731,12 +792,13 @@ body.sidebar-collapsed .main-content {
 }
 
 .data-table tbody tr {
-    transition: background 0.15s;
+    transition: all 0.2s ease;
     cursor: pointer;
 }
 
 .data-table tbody tr:hover {
     background: var(--bg-card);
+    box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .data-table td {
@@ -1386,6 +1448,7 @@ body.sidebar-collapsed .main-content {
     display: flex;
     align-items: center;
     gap: 8px;
+    animation: fadeIn 0.3s ease;
 }
 
 .section-title::after {
@@ -1438,6 +1501,7 @@ body.sidebar-collapsed .main-content {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     overflow: hidden;
+    animation: scaleIn 0.3s ease;
 }
 
 .table-wrapper .data-table thead th {
@@ -1640,7 +1704,19 @@ body.sidebar-collapsed .main-content {
     display: flex;
     flex-direction: column;
     align-items: center;
+    animation: scaleIn 0.4s ease backwards;
+    transition: border-color 0.3s, box-shadow 0.3s;
 }
+
+.chart-card:hover {
+    border-color: var(--border-light);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.charts-grid .chart-card:nth-child(1) { animation-delay: 0.05s; }
+.charts-grid .chart-card:nth-child(2) { animation-delay: 0.1s; }
+.charts-grid .chart-card:nth-child(3) { animation-delay: 0.15s; }
+.charts-grid .chart-card:nth-child(4) { animation-delay: 0.2s; }
 
 .chart-card-wide {
     grid-column: 1 / -1;
@@ -1875,8 +1951,8 @@ body.sidebar-collapsed .main-content {
     transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.mon-full-fill { background: var(--passing); }
-.mon-basic-fill { background: var(--warning); }
+.mon-full-fill { background: linear-gradient(90deg, var(--passing), #34d399, var(--passing)); background-size: 200% 100%; animation: shimmer 3s linear infinite; }
+.mon-basic-fill { background: linear-gradient(90deg, var(--warning), #fbbf24, var(--warning)); background-size: 200% 100%; animation: shimmer 3s linear infinite; }
 .mon-none-fill { background: var(--text-muted); }
 
 .mon-level-servers {
@@ -1904,11 +1980,18 @@ body.sidebar-collapsed .main-content {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 18px;
-    transition: border-color 0.2s;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    animation: slideUp 0.35s ease backwards;
 }
 
+.systems-panel .system-card:nth-child(3n+1) { animation-delay: 0s; }
+.systems-panel .system-card:nth-child(3n+2) { animation-delay: 0.07s; }
+.systems-panel .system-card:nth-child(3n)   { animation-delay: 0.14s; }
+
 .system-card:hover {
-    border-color: var(--border-light);
+    border-color: var(--accent-border);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 }
 
 .system-card-header {
@@ -1989,8 +2072,11 @@ body.sidebar-collapsed .main-content {
 
 .system-card-fill {
     height: 100%;
-    background: linear-gradient(90deg, #8b5cf6, #c4b5fd);
+    background: linear-gradient(90deg, #8b5cf6, #c4b5fd, #8b5cf6);
+    background-size: 200% 100%;
     border-radius: 2px;
+    animation: shimmer 3s linear infinite;
+    transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .system-card-details {
