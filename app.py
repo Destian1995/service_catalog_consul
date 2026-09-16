@@ -1195,6 +1195,30 @@ def api_heatmap():
         "matrix": matrix,
     })
 
+# ── Architecture / IS dependencies ──
+ARCH_PATH = os.path.join(os.path.dirname(__file__), "architecture.json")
+
+def _load_arch():
+    if os.path.exists(ARCH_PATH):
+        with open(ARCH_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {"nodes": [], "links": []}
+
+def _save_arch(data):
+    with open(ARCH_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+@app.route("/api/architecture")
+def api_architecture():
+    return jsonify(_load_arch())
+
+@app.route("/api/architecture", methods=["POST"])
+def api_save_architecture():
+    data = request.json
+    _save_arch(data)
+    _log_change("architecture_update", f"{len(data.get('nodes', []))} nodes, {len(data.get('links', []))} links")
+    return jsonify({"ok": True})
+
 # ──────────────────────────────────────
 # Serve SPA + Admin
 # ──────────────────────────────────────

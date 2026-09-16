@@ -1521,6 +1521,27 @@ body.sidebar-collapsed .main-content {
     background: rgba(99, 102, 241, 0.25);
 }
 
+/* ─── Architecture view ─── */
+.arch-container {
+    width: 100%;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    position: relative;
+}
+
+.arch-container canvas {
+    display: block;
+}
+
+.arch-toolbar {
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
 .cmp-hidden {
     display: none;
     flex-wrap: wrap;

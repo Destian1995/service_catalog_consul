@@ -238,35 +238,33 @@ class ConsulAggregator:
                 except Exception as e:
                     log.error(f"get_all_services catalog: {e}")
 
-        # Step 2: count real instances per service by scanning node details
-        # This uses cached /catalog/node/:name data — accurate host mapping
-        all_nodes = self.get_all_nodes()
-        svc_instance_count = {}
-        svc_ports = {}
-
-        def _scan_node(node):
-            node_name = node["Node"]
-            detail = self.get_node_detail(node_name)
-            results = []
-            if detail:
-                for svc in detail.get("services", []):
-                    results.append((svc["Service"], svc.get("Port", 0)))
-            return results
+        # Step 2: count instances via /catalog/service/:name (1 req per service, parallel)
+        def _count_svc(svc_name):
+            total = 0
+            ports = set()
+            nodes_set = set()
+            for client in self.clients:
+                raw = client._get(f"/catalog/service/{svc_name}")
+                if raw:
+                    for entry in raw:
+                        node = entry.get("Node", "")
+                        if node not in nodes_set:
+                            nodes_set.add(node)
+                            total += 1
+                        p = entry.get("ServicePort", 0)
+                        if p:
+                            ports.add(p)
+            return svc_name, total, ports
 
         with ThreadPoolExecutor(max_workers=20) as pool:
-            futures = [pool.submit(_scan_node, n) for n in all_nodes]
+            futures = [pool.submit(_count_svc, name) for name in seen]
             for f in as_completed(futures):
                 try:
-                    for svc_name, port in f.result():
-                        svc_instance_count[svc_name] = svc_instance_count.get(svc_name, 0) + 1
-                        if port:
-                            svc_ports.setdefault(svc_name, set()).add(port)
+                    name, count, ports = f.result()
+                    seen[name]["instances"] = count
+                    seen[name]["ports"].update(ports)
                 except Exception:
                     pass
-
-        for name in seen:
-            seen[name]["instances"] = svc_instance_count.get(name, 0)
-            seen[name]["ports"].update(svc_ports.get(name, set()))
 
         result = sorted([
             {"name": d["name"], "tags": sorted(d["tags"]), "instances": d["instances"], "ports": sorted(d["ports"])}
@@ -278,24 +276,37 @@ class ConsulAggregator:
         return result
 
     def get_service_detail(self, service_name):
-        """Find which nodes have this service via /catalog/node per node (cached).
-        Uses already-cached node details, not /health/service/ which reports
-        the registration node, not the actual host."""
+        """Get nodes for a service via /catalog/service/:name, then fetch node details."""
         cache_key = f"svc_detail:{service_name}"
         cached = _cache.get(cache_key)
         if cached is not None:
             return cached
 
-        instances = []
+        # Step 1: find which nodes have this service
+        target_nodes = set()
+        for client in self.clients:
+            raw = client._get(f"/catalog/service/{service_name}")
+            if raw:
+                for entry in raw:
+                    target_nodes.add(entry.get("Node", ""))
+
+        if not target_nodes:
+            return []
+
+        # Step 2: get node details only for those nodes (cached per node)
         all_nodes = self.get_all_nodes()
-        for node in all_nodes:
-            node_name = node["Node"]
+        node_map = {n["Node"]: n for n in all_nodes}
+
+        instances = []
+        for node_name in target_nodes:
+            node = node_map.get(node_name)
+            if not node:
+                continue
             detail = self.get_node_detail(node_name)
             if not detail:
                 continue
             for svc in detail.get("services", []):
                 if svc["Service"] == service_name:
-                    # Find checks for this service on this node
                     svc_checks = [c for c in detail.get("checks", [])
                                   if c.get("ServiceName") == service_name or c.get("ServiceID") == svc.get("ID")]
                     status = "passing"
@@ -303,10 +314,8 @@ class ConsulAggregator:
                         if c.get("Status") == "critical": status = "critical"
                         elif c.get("Status") == "warning" and status != "critical": status = "warning"
                     instances.append({
-                        "service": svc,
-                        "node": node,
-                        "checks": svc_checks,
-                        "status": status,
+                        "service": svc, "node": node,
+                        "checks": svc_checks, "status": status,
                     })
         _cache.set(cache_key, instances)
         return instances

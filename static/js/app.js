@@ -63,6 +63,7 @@ function navigate(view) {
     else if (view === 'servers') renderServers();
     else if (view === 'services') renderServices();
     else if (view === 'monitoring') renderMonitoring();
+    else if (view === 'architecture') renderArchitecture();
     else if (view === 'inventory') renderInventory();
     else if (view === 'analytics') renderAnalytics();
 
@@ -1115,6 +1116,201 @@ function resetMonFilters() {
 // ═══════════════════════════════════════
 // Инвентаризация
 // ═══════════════════════════════════════
+
+// ═══════════════════════════════════════
+// Архитектура ИС — интерактивная схема
+// ═══════════════════════════════════════
+
+async function renderArchitecture() {
+    const el = $('#view-architecture');
+    el.innerHTML = LOADER;
+    const arch = await api('/api/architecture');
+    const nodes = arch.nodes || [];
+    const links = arch.links || [];
+
+    el.innerHTML = `
+        <h2 class="page-title">Архитектура информационных систем</h2>
+        <div class="arch-toolbar">
+            <span style="font-size:12px;color:var(--text-muted)">Перетаскивайте блоки для настройки. Наведите для деталей.</span>
+        </div>
+        <div class="arch-container" id="archContainer">
+            <canvas id="archCanvas"></canvas>
+        </div>
+    `;
+
+    requestAnimationFrame(() => initArchCanvas(nodes, links));
+}
+
+function initArchCanvas(nodes, links) {
+    const container = document.getElementById('archContainer');
+    const canvas = document.getElementById('archCanvas');
+    if (!canvas || !container) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+
+    const W = container.clientWidth;
+    const H = Math.max(600, window.innerHeight - 200);
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    ctx.scale(dpr, dpr);
+
+    const typeColors = {
+        external: '#ef4444', app: '#6366f1', backoffice: '#f59e0b',
+        frontoffice: '#10b981', tech: '#64748b'
+    };
+    const typeLabels = {
+        external: 'Внешняя', app: 'Прикладная', backoffice: 'Back-office',
+        frontoffice: 'Front-office', tech: 'Технологическая'
+    };
+
+    // Layout: force-directed simple
+    const nodeW = 140, nodeH = 50;
+    const nodeMap = {};
+    nodes.forEach((n, i) => {
+        const cols = Math.ceil(Math.sqrt(nodes.length) * 1.5);
+        const row = Math.floor(i / cols);
+        const col = i % cols;
+        nodeMap[n.id] = {
+            ...n, x: 80 + col * (nodeW + 40), y: 80 + row * (nodeH + 50),
+            w: nodeW, h: nodeH, vx: 0, vy: 0
+        };
+    });
+
+    // Simple force simulation
+    for (let iter = 0; iter < 80; iter++) {
+        // Repulsion
+        const nArr = Object.values(nodeMap);
+        for (let i = 0; i < nArr.length; i++) {
+            for (let j = i + 1; j < nArr.length; j++) {
+                let dx = nArr[j].x - nArr[i].x;
+                let dy = nArr[j].y - nArr[i].y;
+                let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                let force = 8000 / (dist * dist);
+                nArr[i].vx -= dx / dist * force;
+                nArr[i].vy -= dy / dist * force;
+                nArr[j].vx += dx / dist * force;
+                nArr[j].vy += dy / dist * force;
+            }
+        }
+        // Attraction from links
+        links.forEach(l => {
+            const a = nodeMap[l.from], b = nodeMap[l.to];
+            if (!a || !b) return;
+            let dx = b.x - a.x, dy = b.y - a.y;
+            let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+            let force = (dist - 200) * 0.03;
+            a.vx += dx / dist * force;
+            a.vy += dy / dist * force;
+            b.vx -= dx / dist * force;
+            b.vy -= dy / dist * force;
+        });
+        // Center gravity
+        nArr.forEach(n => {
+            n.vx += (W / 2 - n.x) * 0.005;
+            n.vy += (H / 2 - n.y) * 0.005;
+            n.x += n.vx * 0.3; n.y += n.vy * 0.3;
+            n.vx *= 0.5; n.vy *= 0.5;
+            n.x = Math.max(10, Math.min(W - nodeW - 10, n.x));
+            n.y = Math.max(10, Math.min(H - nodeH - 10, n.y));
+        });
+    }
+
+    let dragNode = null, hoverNode = null, offsetX = 0, offsetY = 0;
+
+    function draw() {
+        ctx.clearRect(0, 0, W, H);
+
+        // Links
+        links.forEach(l => {
+            const a = nodeMap[l.from], b = nodeMap[l.to];
+            if (!a || !b) return;
+            ctx.beginPath();
+            ctx.moveTo(a.x + a.w / 2, a.y + a.h / 2);
+            ctx.lineTo(b.x + b.w / 2, b.y + b.h / 2);
+            ctx.strokeStyle = (hoverNode && (hoverNode.id === l.from || hoverNode.id === l.to))
+                ? 'rgba(129,140,248,0.6)' : 'rgba(255,255,255,0.08)';
+            ctx.lineWidth = (hoverNode && (hoverNode.id === l.from || hoverNode.id === l.to)) ? 2 : 1;
+            ctx.stroke();
+            // Arrow
+            const angle = Math.atan2(b.y + b.h / 2 - a.y - a.h / 2, b.x + b.w / 2 - a.x - a.w / 2);
+            const mx = (a.x + b.x + a.w) / 2, my = (a.y + b.y + a.h) / 2;
+            ctx.save(); ctx.translate(mx, my); ctx.rotate(angle);
+            ctx.beginPath(); ctx.moveTo(6, 0); ctx.lineTo(-4, -4); ctx.lineTo(-4, 4); ctx.closePath();
+            ctx.fillStyle = ctx.strokeStyle; ctx.fill(); ctx.restore();
+        });
+
+        // Nodes
+        Object.values(nodeMap).forEach(n => {
+            const color = typeColors[n.type] || '#6366f1';
+            const isHover = hoverNode && hoverNode.id === n.id;
+            // Shadow
+            if (isHover) {
+                ctx.shadowColor = color; ctx.shadowBlur = 16;
+            }
+            // Box
+            ctx.fillStyle = isHover ? 'rgba(30,38,66,0.95)' : 'rgba(26,32,53,0.9)';
+            ctx.strokeStyle = color;
+            ctx.lineWidth = isHover ? 2 : 1;
+            ctx.beginPath();
+            ctx.roundRect(n.x, n.y, n.w, n.h, 8);
+            ctx.fill(); ctx.stroke();
+            ctx.shadowBlur = 0;
+            // Label
+            ctx.fillStyle = '#e2e8f0';
+            ctx.font = "600 11px 'Inter', sans-serif";
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            const label = n.label.length > 18 ? n.label.substring(0, 16) + '...' : n.label;
+            ctx.fillText(label, n.x + n.w / 2, n.y + n.h / 2 - 7);
+            // Type
+            ctx.fillStyle = color;
+            ctx.font = "500 9px 'Inter', sans-serif";
+            ctx.fillText(typeLabels[n.type] || n.type, n.x + n.w / 2, n.y + n.h / 2 + 10);
+        });
+
+        // Tooltip
+        if (hoverNode && !dragNode) {
+            const tt = hoverNode.label;
+            const related = links.filter(l => l.from === hoverNode.id || l.to === hoverNode.id).length;
+            const text = tt + ' — ' + related + ' связей';
+            ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.font = "500 12px 'Inter', sans-serif";
+            const tw = ctx.measureText(text).width + 16;
+            ctx.beginPath(); ctx.roundRect(hoverNode.x + hoverNode.w / 2 - tw / 2, hoverNode.y - 30, tw, 22, 4);
+            ctx.fill();
+            ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(text, hoverNode.x + hoverNode.w / 2, hoverNode.y - 19);
+        }
+    }
+
+    function findNode(mx, my) {
+        for (const n of Object.values(nodeMap)) {
+            if (mx >= n.x && mx <= n.x + n.w && my >= n.y && my <= n.y + n.h) return n;
+        }
+        return null;
+    }
+
+    canvas.addEventListener('mousedown', e => {
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        const n = findNode(mx, my);
+        if (n) { dragNode = n; offsetX = mx - n.x; offsetY = my - n.y; canvas.style.cursor = 'grabbing'; }
+    });
+    canvas.addEventListener('mousemove', e => {
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        if (dragNode) {
+            dragNode.x = mx - offsetX; dragNode.y = my - offsetY; draw();
+        } else {
+            const prev = hoverNode;
+            hoverNode = findNode(mx, my);
+            canvas.style.cursor = hoverNode ? 'grab' : 'default';
+            if (prev !== hoverNode) draw();
+        }
+    });
+    canvas.addEventListener('mouseup', () => { dragNode = null; canvas.style.cursor = hoverNode ? 'grab' : 'default'; });
+    canvas.addEventListener('mouseleave', () => { dragNode = null; hoverNode = null; draw(); });
+
+    draw();
+}
 
 async function renderInventory() {
     const el = $('#view-inventory');
