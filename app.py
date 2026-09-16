@@ -52,11 +52,18 @@ def get_mode():
     return load_config().get("mode", "test")
 
 def _exclude_systems(nodes):
-    """Remove nodes belonging to excluded systems."""
-    excluded = set(load_config().get("excluded_systems", []))
-    if not excluded:
-        return nodes
-    return [n for n in nodes if (n["Meta"].get("system_name") or "").strip() not in excluded]
+    """Remove nodes belonging to excluded systems or matching excluded hostname patterns."""
+    import fnmatch
+    cfg = load_config()
+    excluded_is = set(cfg.get("excluded_systems", []))
+    excluded_hosts = cfg.get("excluded_hosts", ["consul-aton-infra-prod*"])
+    result = nodes
+    if excluded_is:
+        result = [n for n in result if (n["Meta"].get("system_name") or "").strip() not in excluded_is]
+    if excluded_hosts:
+        result = [n for n in result
+                  if not any(fnmatch.fnmatch(n["Node"].lower(), pat.lower()) for pat in excluded_hosts)]
+    return result
 
 # ──────────────────────────────────────
 # Data providers: test vs live

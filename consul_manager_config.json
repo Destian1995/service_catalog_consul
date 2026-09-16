@@ -33,5 +33,13 @@
         "port": 5000,
         "secret_key": "change-me-in-production",
         "admin_password": "admin"
-    }
+    },
+    "monitored_systems": [
+        "CRM",
+        "E-Commerce"
+    ],
+    "excluded_systems": [],
+    "excluded_hosts": [
+        "consul-aton-infra-prod*"
+    ]
 }
