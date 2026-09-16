@@ -1116,19 +1116,6 @@ async function renderAnalytics() {
     const unassigned = data.unassigned_servers || [];
     const expBySys = data.exporters_by_system || {};
 
-    // Build IS summary table rows
-    const isRows = Object.entries(data.hosts_by_system)
-        .filter(([n]) => n !== 'Unassigned')
-        .map(([sysName, info]) => {
-            const expCount = expBySys[sysName] || 0;
-            return `<tr>
-                <td class="cell-name" style="cursor:pointer" onclick="globalSearchGo('servers','${sysName.replace(/'/g, "\\'")}','system_name')">${sysName}</td>
-                <td class="cell-mono">${info.count}</td>
-                <td class="cell-mono">${expCount}</td>
-                <td>${info.mon_advanced > 0 ? '<span class="inst-badge inst-passing">' + info.mon_advanced + '</span>' : ''}${info.mon_basic > 0 ? ' <span class="inst-badge inst-warning">' + info.mon_basic + '</span>' : ''}${info.mon_none > 0 ? ' <span class="inst-badge" style="background:rgba(100,116,139,0.1);border:1px solid rgba(100,116,139,0.2);color:var(--text-muted)">' + info.mon_none + '</span>' : ''}</td>
-                <td>${(info.datacenters || []).map(dc => '<span class="badge badge-dc">' + dc + '</span>').join(' ')}</td>
-            </tr>`;
-        }).join('');
 
     el.innerHTML = `
         <h2 class="page-title">Аналитика</h2>
@@ -1159,15 +1146,6 @@ async function renderAnalytics() {
                 <div class="stat-label">Без метаданных</div>
                 <div class="stat-value">${unassigned.length}</div>
             </div>
-        </div>
-
-        <!-- Серверы по ИС -->
-        <div class="section-title" style="margin-top:24px">Серверы и экспортеры по ИС</div>
-        <div class="table-wrapper">
-            <table class="data-table">
-                <thead><tr><th>ИС</th><th>Серверы</th><th>Экспортеры</th><th>Мониторинг</th><th>ДЦ</th></tr></thead>
-                <tbody>${isRows}</tbody>
-            </table>
         </div>
 
         <!-- Серверы без system_name -->
