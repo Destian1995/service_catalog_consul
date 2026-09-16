@@ -385,11 +385,11 @@ def api_analytics():
     for n in nodes:
         dc = n["Datacenter"]
         servers_by_dc[dc] = servers_by_dc.get(dc, 0) + 1
-        env = n["Meta"].get("environment", "unknown")
+        env = (n["Meta"].get("environment") or "").strip().lower() or "не указана"
         servers_by_env[env] = servers_by_env.get(env, 0) + 1
-        os_name = n["Meta"].get("os", "unknown")
+        os_name = (n["Meta"].get("os") or "").strip().lower() or "не указана"
         servers_by_os[os_name] = servers_by_os.get(os_name, 0) + 1
-        team = n["Meta"].get("team", "unknown")
+        team = (n["Meta"].get("team") or "").strip().lower() or "не указана"
         servers_by_team[team] = servers_by_team.get(team, 0) + 1
 
     # Services by category

@@ -47,6 +47,15 @@ class _TTLCache:
 _cache = _TTLCache()
 
 
+def _normalize_os(val):
+    v = (val or "-").strip().lower()
+    if v in ("win", "windows", "win32", "win64"):
+        return "windows"
+    if v in ("linux", "lin"):
+        return "linux"
+    return v
+
+
 class ConsulClient:
     """Fetches data from one Consul datacenter."""
 
@@ -93,7 +102,7 @@ class ConsulClient:
                 "Address": n.get("Address", ""),
                 "Datacenter": n.get("Datacenter", self.dc_name),
                 "Meta": {
-                    "os": meta.get("system_operation_type", meta.get("os", "-")),
+                    "os": _normalize_os(meta.get("system_operation_type") or meta.get("os") or "-"),
                     "cpu": meta.get("cpu", "-"),
                     "ram": meta.get("ram", "-"),
                     "disk": meta.get("disk", "-"),
@@ -282,7 +291,7 @@ class ConsulAggregator:
                         "node": {"ID": node_data.get("ID", ""), "Node": node_data.get("Node", ""),
                                  "Address": node_data.get("Address", ""),
                                  "Datacenter": node_data.get("Datacenter", client.dc_name),
-                                 "Meta": {"os": meta.get("system_operation_type", "-"),
+                                 "Meta": {"os": _normalize_os(meta.get("system_operation_type") or "-"),
                                           "environment": (meta.get("system_environment") or "-").lower(),
                                           "team": (meta.get("system_team") or "-").lower(),
                                           "system_name": meta.get("system_name", "-")},
