@@ -1489,6 +1489,36 @@ body.sidebar-collapsed .main-content {
     box-shadow: 0 0 12px rgba(99, 102, 241, 0.3);
 }
 
+/* ─── Collapsible tags in comparison ─── */
+.cmp-cell {
+    font-size: 12px;
+    white-space: normal !important;
+    vertical-align: top;
+}
+
+.cmp-toggle {
+    display: inline-block;
+    color: var(--accent-light);
+    font-size: 11px;
+    cursor: pointer;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--accent-glow);
+    transition: background 0.2s;
+}
+
+.cmp-toggle:hover {
+    background: rgba(99, 102, 241, 0.25);
+}
+
+.cmp-hidden {
+    display: none;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+    animation: fadeIn 0.2s ease;
+}
+
 .section-title::after {
     content: '';
     flex: 1;

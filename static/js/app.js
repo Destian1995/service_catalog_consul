@@ -1233,6 +1233,17 @@ async function renderInventory() {
     `;
 }
 
+function _collapsibleTags(items, limit, id) {
+    if (items.length <= limit) {
+        return items.map(s => '<span class="tag">' + s + '</span>').join(' ');
+    }
+    const visible = items.slice(0, limit).map(s => '<span class="tag">' + s + '</span>').join(' ');
+    const hidden = items.slice(limit).map(s => '<span class="tag">' + s + '</span>').join(' ');
+    return visible +
+        ' <span class="cmp-toggle" onclick="document.getElementById(\'' + id + '\').style.display=this.style.display=\'none\'?\'flex\':\'flex\';this.style.display=\'none\'">... ещё ' + (items.length - limit) + '</span>' +
+        '<div id="' + id + '" class="cmp-hidden">' + hidden + '</div>';
+}
+
 async function runComparison() {
     const is1 = document.getElementById('compareIs1')?.value;
     const is2 = document.getElementById('compareIs2')?.value;
@@ -1252,8 +1263,8 @@ async function runComparison() {
     ];
     el.innerHTML = '<table class="data-table" style="margin-top:16px;table-layout:auto"><thead><tr><th>Параметр</th><th>' + d1.name + '</th><th>' + d2.name + '</th></tr></thead><tbody>' +
         rows.map(r => '<tr><td class="cell-muted">' + r[0] + '</td><td class="cell-mono">' + r[1] + '</td><td class="cell-mono">' + r[2] + '</td></tr>').join('') +
-        '<tr><td class="cell-muted">Серверы</td><td style="font-size:12px">' + d1.server_list.map(s => '<span class="tag">' + s + '</span>').join(' ') + '</td><td style="font-size:12px">' + d2.server_list.map(s => '<span class="tag">' + s + '</span>').join(' ') + '</td></tr>' +
-        '<tr><td class="cell-muted">Экспортеры</td><td style="font-size:12px">' + d1.exporters.map(s => '<span class="tag">' + s + '</span>').join(' ') + '</td><td style="font-size:12px">' + d2.exporters.map(s => '<span class="tag">' + s + '</span>').join(' ') + '</td></tr>' +
+        '<tr><td class="cell-muted">Серверы</td><td class="cmp-cell">' + _collapsibleTags(d1.server_list, 3, 'cmp-srv1') + '</td><td class="cmp-cell">' + _collapsibleTags(d2.server_list, 3, 'cmp-srv2') + '</td></tr>' +
+        '<tr><td class="cell-muted">Экспортеры</td><td class="cmp-cell">' + _collapsibleTags(d1.exporters, 4, 'cmp-exp1') + '</td><td class="cmp-cell">' + _collapsibleTags(d2.exporters, 4, 'cmp-exp2') + '</td></tr>' +
         '</tbody></table>';
 }
 
