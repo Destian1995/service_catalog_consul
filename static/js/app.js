@@ -1149,6 +1149,10 @@ async function renderArchitecture() {
             <span class="arch-leg-item" style="--lc:#f59e0b">Back-office</span>
             <span class="arch-leg-item" style="--lc:#10b981">Front-office</span>
             <span class="arch-leg-item" style="--lc:#64748b">Технологическая</span>
+            <span style="margin-left:16px;font-size:11px;color:var(--text-muted)">Индикатор:</span>
+            <span class="arch-leg-dot" style="--dc:#10b981">Полный мон.</span>
+            <span class="arch-leg-dot" style="--dc:#f59e0b">Частичный</span>
+            <span class="arch-leg-dot" style="--dc:rgba(239,68,68,0.5)">Нет</span>
         </div>
     `;
 
@@ -1302,6 +1306,26 @@ function initArchCanvas(nodes, links) {
             ctx.fillStyle = color;
             ctx.font = `500 ${10 / cam.zoom}px 'Inter', sans-serif`;
             ctx.fillText(typeLabels[n.type] || n.type, n.x + n.w / 2, n.y + n.h / 2 + 12);
+            // Monitoring indicator
+            if (n.mon_status && n.mon_status !== 'none') {
+                const r = 5 / cam.zoom;
+                const ix = n.x + n.w - 8 / cam.zoom;
+                const iy = n.y + 8 / cam.zoom;
+                ctx.beginPath(); ctx.arc(ix, iy, r, 0, Math.PI * 2);
+                ctx.fillStyle = n.mon_status === 'full' ? '#10b981' : '#f59e0b';
+                ctx.fill();
+                // Server count badge
+                if (n.mon_servers > 0) {
+                    ctx.font = `600 ${8 / cam.zoom}px 'JetBrains Mono', monospace`;
+                    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                    ctx.fillText(n.mon_servers, ix - r * 3, iy);
+                }
+            } else if (n.mon_servers === 0 && n.type !== 'external') {
+                // No monitoring — red dot
+                const r = 4 / cam.zoom;
+                ctx.beginPath(); ctx.arc(n.x + n.w - 8 / cam.zoom, n.y + 8 / cam.zoom, r, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(239,68,68,0.5)'; ctx.fill();
+            }
             ctx.globalAlpha = 1;
         });
 

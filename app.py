@@ -1210,7 +1210,42 @@ def _save_arch(data):
 
 @app.route("/api/architecture")
 def api_architecture():
-    return jsonify(_load_arch())
+    arch = _load_arch()
+    # Enrich nodes with monitoring data from Consul
+    try:
+        nodes = get_nodes()
+        # Build IS → stats map
+        is_stats = {}
+        for n in nodes:
+            sn = (n["Meta"].get("system_name") or "").strip()
+            if not sn or sn == "-":
+                continue
+            if sn not in is_stats:
+                is_stats[sn] = {"servers": 0, "has_monitoring": False}
+            is_stats[sn]["servers"] += 1
+        # Also check monitored_systems from config
+        cfg = load_config()
+        mon_systems = set(cfg.get("monitored_systems", []))
+        for sn in is_stats:
+            if sn in mon_systems:
+                is_stats[sn]["has_monitoring"] = True
+
+        # Match arch nodes to IS by label or id (case-insensitive)
+        is_lower = {k.lower(): k for k in is_stats}
+        for node in arch.get("nodes", []):
+            label_l = (node.get("label") or "").lower()
+            id_l = (node.get("id") or "").lower()
+            matched = is_lower.get(label_l) or is_lower.get(id_l)
+            if matched:
+                st = is_stats[matched]
+                node["mon_servers"] = st["servers"]
+                node["mon_status"] = "full" if st["has_monitoring"] else "partial"
+            else:
+                node["mon_servers"] = 0
+                node["mon_status"] = "none"
+    except Exception:
+        pass
+    return jsonify(arch)
 
 @app.route("/api/architecture", methods=["POST"])
 def api_save_architecture():

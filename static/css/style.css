@@ -1567,6 +1567,22 @@ body.sidebar-collapsed .main-content {
     background: rgba(0,0,0,0.3);
 }
 
+.arch-leg-dot {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.arch-leg-dot::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--dc);
+}
+
 .cmp-hidden {
     display: none;
     flex-wrap: wrap;
