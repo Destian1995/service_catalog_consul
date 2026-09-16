@@ -238,29 +238,35 @@ class ConsulAggregator:
                 except Exception as e:
                     log.error(f"get_all_services catalog: {e}")
 
-        # Step 2: count instances per service via /catalog/service/:name (parallel)
-        def _count_svc(svc_name):
-            total = 0
-            ports = set()
-            for client in self.clients:
-                raw = client._get(f"/catalog/service/{svc_name}")
-                if raw:
-                    total += len(raw)
-                    for entry in raw:
-                        p = entry.get("ServicePort", 0)
-                        if p:
-                            ports.add(p)
-            return svc_name, total, ports
+        # Step 2: count real instances per service by scanning node details
+        # This uses cached /catalog/node/:name data — accurate host mapping
+        all_nodes = self.get_all_nodes()
+        svc_instance_count = {}
+        svc_ports = {}
+
+        def _scan_node(node):
+            node_name = node["Node"]
+            detail = self.get_node_detail(node_name)
+            results = []
+            if detail:
+                for svc in detail.get("services", []):
+                    results.append((svc["Service"], svc.get("Port", 0)))
+            return results
 
         with ThreadPoolExecutor(max_workers=20) as pool:
-            futures = [pool.submit(_count_svc, name) for name in seen]
+            futures = [pool.submit(_scan_node, n) for n in all_nodes]
             for f in as_completed(futures):
                 try:
-                    name, count, ports = f.result()
-                    seen[name]["instances"] = count
-                    seen[name]["ports"].update(ports)
+                    for svc_name, port in f.result():
+                        svc_instance_count[svc_name] = svc_instance_count.get(svc_name, 0) + 1
+                        if port:
+                            svc_ports.setdefault(svc_name, set()).add(port)
                 except Exception:
                     pass
+
+        for name in seen:
+            seen[name]["instances"] = svc_instance_count.get(name, 0)
+            seen[name]["ports"].update(svc_ports.get(name, set()))
 
         result = sorted([
             {"name": d["name"], "tags": sorted(d["tags"]), "instances": d["instances"], "ports": sorted(d["ports"])}
@@ -272,54 +278,35 @@ class ConsulAggregator:
         return result
 
     def get_service_detail(self, service_name):
+        """Find which nodes have this service via /catalog/node per node (cached).
+        Uses already-cached node details, not /health/service/ which reports
+        the registration node, not the actual host."""
         cache_key = f"svc_detail:{service_name}"
         cached = _cache.get(cache_key)
         if cached is not None:
             return cached
 
         instances = []
-        # Parallel across DCs
-        def _fetch(client):
-            return client.get_service_health(service_name)
-
-        with ThreadPoolExecutor(max_workers=10) as pool:
-            futures = {pool.submit(_fetch, c): c for c in self.clients}
-            for f in as_completed(futures):
-                client = futures[f]
-                try:
-                    health = f.result()
-                except Exception:
-                    continue
-                for entry in health:
-                    node_data = entry.get("Node") or {}
-                    svc_data = entry.get("Service") or {}
-                    checks_data = entry.get("Checks") or []
-                    meta = node_data.get("Meta") or {}
+        all_nodes = self.get_all_nodes()
+        for node in all_nodes:
+            node_name = node["Node"]
+            detail = self.get_node_detail(node_name)
+            if not detail:
+                continue
+            for svc in detail.get("services", []):
+                if svc["Service"] == service_name:
+                    # Find checks for this service on this node
+                    svc_checks = [c for c in detail.get("checks", [])
+                                  if c.get("ServiceName") == service_name or c.get("ServiceID") == svc.get("ID")]
                     status = "passing"
-                    parsed_checks = []
-                    for c in checks_data:
-                        cs = c.get("Status", "passing")
-                        parsed_checks.append({
-                            "Node": node_data.get("Node", ""), "CheckID": c.get("CheckID", ""),
-                            "Name": c.get("Name", ""), "Status": cs, "Output": c.get("Output", ""),
-                            "ServiceID": c.get("ServiceID", ""), "ServiceName": c.get("ServiceName", ""),
-                            "Type": c.get("Type", ""),
-                        })
-                        if cs == "critical": status = "critical"
-                        elif cs == "warning" and status != "critical": status = "warning"
+                    for c in svc_checks:
+                        if c.get("Status") == "critical": status = "critical"
+                        elif c.get("Status") == "warning" and status != "critical": status = "warning"
                     instances.append({
-                        "service": {"ID": svc_data.get("ID", ""), "Service": svc_data.get("Service", service_name),
-                                    "Tags": svc_data.get("Tags") or [], "Port": svc_data.get("Port", 0),
-                                    "Meta": svc_data.get("Meta") or {}},
-                        "node": {"ID": node_data.get("ID", ""), "Node": node_data.get("Node", ""),
-                                 "Address": node_data.get("Address", ""),
-                                 "Datacenter": node_data.get("Datacenter", client.dc_name),
-                                 "Meta": {"os": _normalize_os(meta.get("system_operation_type") or "-"),
-                                          "environment": (meta.get("system_environment") or "-").lower(),
-                                          "team": (meta.get("system_team") or "-").lower(),
-                                          "system_name": meta.get("system_name", "-")},
-                                 "TaggedAddresses": node_data.get("TaggedAddresses") or {}},
-                        "checks": parsed_checks, "status": status,
+                        "service": svc,
+                        "node": node,
+                        "checks": svc_checks,
+                        "status": status,
                     })
         _cache.set(cache_key, instances)
         return instances
