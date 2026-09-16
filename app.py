@@ -645,7 +645,8 @@ def api_analytics():
         "is_monitoring": is_monitoring_summary,
         "unassigned_servers": unassigned_servers,
         "exporters_by_system": exporters_by_system,
-        "total_exporters": len(services_list),
+        "total_exporters_unique": len(services_list),
+        "total_exporters_instances": sum(s.get("instances", 0) for s in services_list),
     })
 
 # ──────────────────────────────────────

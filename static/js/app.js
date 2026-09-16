@@ -1131,8 +1131,8 @@ async function renderAnalytics() {
                 <div class="stat-value">${isMon.total_is}</div>
             </div>
             <div class="stat-card accent">
-                <div class="stat-label">Всего экспортеров</div>
-                <div class="stat-value">${data.total_exporters || 0}</div>
+                <div class="stat-label">Экспортеров установлено</div>
+                <div class="stat-value">${data.total_exporters_instances || 0}<span style="font-size:14px;color:var(--text-muted);font-weight:400"> / ${data.total_exporters_unique || 0} типов</span></div>
             </div>
             <div class="stat-card passing">
                 <div class="stat-label">Продвинутый мон.</div>
