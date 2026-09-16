@@ -1222,6 +1222,7 @@ def api_architecture():
             "postgres_exporter": "БД PostgreSQL", "postgres-exporter": "БД PostgreSQL",
             "mysqld_exporter": "БД MySQL", "mysqld-exporter": "БД MySQL",
             "mongodb_exporter": "БД MongoDB", "mongodb-exporter": "БД MongoDB",
+            "mongodb_exporter_2": "БД MongoDB", "mongodb-exporter-2": "БД MongoDB",
             "process_exporter": "Процессы", "process-exporter": "Процессы",
             "blackbox_exporter": "Доступность", "blackbox-exporter": "Доступность",
             "cadvisor": "Контейнеры",
@@ -1256,9 +1257,9 @@ def api_architecture():
 
         # Match arch nodes to IS (with aliases for non-obvious names)
         arch_aliases = cfg.get("arch_aliases", {})
-        # Default aliases
+        # Default aliases (arch node id → possible system_name values)
         default_aliases = {
-            "Website": ["aton.ru", "web-сайт ооо атон", "web-сайт атон", "сайт атон"],
+            "Website": ["aton.ru", "сайт aton.ru", "web-сайт ооо атон", "web-сайт атон", "сайт атон", "www.aton.ru"],
         }
         for k, v in default_aliases.items():
             if k not in arch_aliases:
@@ -1276,18 +1277,34 @@ def api_architecture():
                     matched = is_lower.get(alias.lower())
                     if matched:
                         break
+            # Fuzzy: try substring match on all system_names
+            if not matched:
+                for is_name_lower, is_name_orig in is_lower.items():
+                    # arch label contains system_name or vice versa
+                    if (label_l in is_name_lower and len(label_l) > 3) or \
+                       (is_name_lower in label_l and len(is_name_lower) > 3) or \
+                       (id_l in is_name_lower and len(id_l) > 3) or \
+                       (is_name_lower in id_l and len(is_name_lower) > 3):
+                        matched = is_name_orig
+                        break
+
             if matched:
                 st = is_stats[matched]
                 node["mon_servers"] = st["servers"]
                 node["mon_status"] = "full" if st["has_monitoring"] else "partial"
-                # Build human-readable monitoring summary
+                # Build human-readable monitoring summary (deduplicate)
                 tags = set()
                 for exp in st["exporters"]:
-                    lbl = exporter_labels.get(exp)
+                    # Normalize: strip @suffix, _N suffix, instance numbers
+                    base = exp.split("@")[0].split(".")[0]
+                    base = _re.sub(r'[_-]?\d+$', '', base)  # remove trailing numbers
+                    base = base.strip("_- ")
+                    lbl = exporter_labels.get(base) or exporter_labels.get(base.replace("-", "_"))
                     if lbl:
                         tags.add(lbl)
-                    elif "exporter" in exp.lower():
-                        tags.add(exp.replace("_", " ").replace("-", " ").title())
+                    elif "exporter" in base.lower() or "monitor" in base.lower():
+                        clean = _re.sub(r'[_-]', ' ', base).strip().title()
+                        tags.add(clean)
                 node["mon_tags"] = sorted(tags)
             else:
                 node["mon_servers"] = 0
