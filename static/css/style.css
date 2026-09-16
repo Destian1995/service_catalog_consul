@@ -775,6 +775,7 @@ body.sidebar-collapsed .main-content {
     width: 100%;
     border-collapse: separate;
     border-spacing: 0;
+    table-layout: fixed;
 }
 
 .data-table thead th {
@@ -789,6 +790,9 @@ body.sidebar-collapsed .main-content {
     top: 0;
     background: var(--bg-primary);
     font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .data-table tbody tr {
@@ -806,11 +810,17 @@ body.sidebar-collapsed .main-content {
     font-size: 14px;
     border-bottom: 1px solid var(--border);
     vertical-align: middle;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .data-table .cell-name {
     font-weight: 600;
     color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .data-table .cell-mono {
@@ -1061,7 +1071,7 @@ body.sidebar-collapsed .main-content {
 .badge-critical { background: var(--critical-bg); border: 1px solid var(--critical-border); color: var(--critical); }
 .badge-dc { background: var(--accent-glow); border: 1px solid var(--accent-border); color: var(--accent-light); }
 .badge-env { background: rgba(148, 163, 184, 0.1); border: 1px solid rgba(148, 163, 184, 0.2); color: var(--text-secondary); }
-.badge-system { background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.25); color: #c4b5fd; font-weight: 500; }
+.badge-system { background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.25); color: #c4b5fd; font-weight: 500; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle; }
 
 /* ─── Tabs ─── */
 .tabs {
@@ -1574,6 +1584,8 @@ body.sidebar-collapsed .main-content {
     padding: 0 !important;
     border-bottom: 2px solid var(--accent-border);
     background: var(--bg-surface);
+    white-space: normal;
+    overflow: visible;
 }
 
 .expand-body {
@@ -1606,6 +1618,10 @@ body.sidebar-collapsed .main-content {
 /* ─── Nested table ─── */
 .nested-table {
     background: transparent;
+}
+
+.nested-table {
+    table-layout: auto;
 }
 
 .nested-table thead th {

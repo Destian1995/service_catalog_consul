@@ -537,14 +537,14 @@ async function applyServerFilters() {
             <thead>
                 <tr>
                     <th style="width:32px"></th>
-                    <th>Статус</th>
-                    <th>Сервер</th>
-                    <th>ИС</th>
-                    <th>IP-адрес</th>
-                    <th>Дата-центр</th>
-                    <th>Среда</th>
-                    <th>ОС</th>
-                    <th>Экспортеры</th>
+                    <th style="width:40px">Статус</th>
+                    <th style="width:18%">Сервер</th>
+                    <th style="width:18%">ИС</th>
+                    <th style="width:12%">IP-адрес</th>
+                    <th style="width:9%">Дата-центр</th>
+                    <th style="width:8%">Среда</th>
+                    <th style="width:8%">ОС</th>
+                    <th style="width:7%">Экспортеры</th>
                 </tr>
             </thead>
             <tbody>
@@ -564,9 +564,9 @@ async function applyServerFilters() {
                         <tr class="expandable-row" onclick="toggleRow('${rowId}', this)">
                             <td>${chevronIcon()}</td>
                             <td><span class="status-dot status-${overallStatus} ${overallStatus === 'critical' ? 'status-critical-pulse' : ''}"></span></td>
-                            <td class="cell-name">${node.Node}</td>
-                            <td><span class="badge badge-system">${node.Meta.system_name || '-'}</span></td>
-                            <td class="cell-mono">${node.Address}</td>
+                            <td class="cell-name" title="${node.Node}">${node.Node}</td>
+                            <td title="${node.Meta.system_name || '-'}"><span class="badge badge-system">${node.Meta.system_name || '-'}</span></td>
+                            <td class="cell-mono" title="${node.Address}">${node.Address}</td>
                             <td><span class="badge badge-dc">${node.Datacenter}</span></td>
                             <td><span class="badge badge-env">${node.Meta.environment}</span></td>
                             <td class="cell-muted">${node.Meta.os}</td>
