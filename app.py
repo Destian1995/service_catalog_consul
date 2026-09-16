@@ -608,6 +608,25 @@ def api_analytics():
         "coverage_pct": round(monitored_is_count / total_is * 100) if total_is else 0,
     }
 
+    # Servers without system_name
+    unassigned_servers = [n["Node"] for n in nodes
+                          if not (n["Meta"].get("system_name") or "").strip()
+                          or n["Meta"].get("system_name") == "-"]
+
+    # Exporters count per IS
+    exporters_by_system = {}
+    if get_mode() == "test":
+        for sys_name, info in hosts_by_system.items():
+            exp_set = set()
+            for svc in TEST_SERVICES:
+                for srv in info["servers"]:
+                    if srv in svc["Nodes"]:
+                        exp_set.add(svc["Service"])
+            exporters_by_system[sys_name] = len(exp_set)
+    else:
+        for sys_name in hosts_by_system:
+            exporters_by_system[sys_name] = 0
+
     return jsonify({
         "services_by_category": svc_by_category, "servers_by_dc": servers_by_dc,
         "servers_by_env": servers_by_env, "servers_by_os": servers_by_os,
@@ -617,6 +636,9 @@ def api_analytics():
         "monitoring_by_dc": monitoring_by_dc, "monitoring_by_env": monitoring_by_env,
         "hosts_by_system": hosts_by_system_out, "services_by_system": services_by_system,
         "is_monitoring": is_monitoring_summary,
+        "unassigned_servers": unassigned_servers,
+        "exporters_by_system": exporters_by_system,
+        "total_exporters": len(services_list),
     })
 
 # ──────────────────────────────────────

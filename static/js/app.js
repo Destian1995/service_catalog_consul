@@ -117,7 +117,7 @@ function renderSearchDropdown(data) {
     if (data.systems.length) {
         html += '<div class="search-group-title">Информационные системы</div>';
         html += data.systems.map(s =>
-            '<div class="search-item" onclick="globalSearchGo(\'monitoring\',\'' + s.replace(/'/g, "\\'") + '\')">' +
+            '<div class="search-item" onclick="globalSearchGo(\'servers\',\'' + s.replace(/'/g, "\\'") + '\',\'system_name\')">' +
             '<span class="badge badge-system">' + s + '</span></div>'
         ).join('');
     }
@@ -141,9 +141,11 @@ function renderSearchDropdown(data) {
     dropdown.style.display = 'block';
 }
 
-function globalSearchGo(view, query) {
+function globalSearchGo(view, query, filterField) {
     document.getElementById('searchDropdown').style.display = 'none';
-    document.getElementById('globalSearch').value = query;
+    document.getElementById('globalSearch').value = '';
+    // Store pending filter for after render
+    window._pendingFilter = { field: filterField || 'search', value: query };
     navigate(view);
 }
 
@@ -488,6 +490,18 @@ async function renderServers() {
         </div>
         <div class="table-wrapper" id="serversContainer"></div>
     `;
+    // Apply pending filter from global search
+    if (window._pendingFilter) {
+        const pf = window._pendingFilter;
+        window._pendingFilter = null;
+        if (pf.field === 'system_name') {
+            const sel = document.getElementById('filterSystem');
+            if (sel) { sel.value = pf.value; }
+        } else if (pf.field === 'search') {
+            const inp = document.getElementById('filterServerSearch');
+            if (inp) { inp.value = pf.value; }
+        }
+    }
     applyServerFilters();
 }
 
@@ -1098,240 +1112,123 @@ async function renderAnalytics() {
 
     const data = await api('/api/analytics');
     const mon = data.monitoring;
+    const isMon = data.is_monitoring || {};
+    const unassigned = data.unassigned_servers || [];
+    const expBySys = data.exporters_by_system || {};
+
+    // Build IS summary table rows
+    const isRows = Object.entries(data.hosts_by_system)
+        .filter(([n]) => n !== 'Unassigned')
+        .map(([sysName, info]) => {
+            const expCount = expBySys[sysName] || 0;
+            return `<tr>
+                <td class="cell-name" style="cursor:pointer" onclick="globalSearchGo('servers','${sysName.replace(/'/g, "\\'")}','system_name')">${sysName}</td>
+                <td class="cell-mono">${info.count}</td>
+                <td class="cell-mono">${expCount}</td>
+                <td>${info.mon_advanced > 0 ? '<span class="inst-badge inst-passing">' + info.mon_advanced + '</span>' : ''}${info.mon_basic > 0 ? ' <span class="inst-badge inst-warning">' + info.mon_basic + '</span>' : ''}${info.mon_none > 0 ? ' <span class="inst-badge" style="background:rgba(100,116,139,0.1);border:1px solid rgba(100,116,139,0.2);color:var(--text-muted)">' + info.mon_none + '</span>' : ''}</td>
+                <td>${(info.datacenters || []).map(dc => '<span class="badge badge-dc">' + dc + '</span>').join(' ')}</td>
+            </tr>`;
+        }).join('');
 
     el.innerHTML = `
         <h2 class="page-title">Аналитика</h2>
 
-        <div class="section-title">Покрытие мониторингом</div>
-        <div class="monitoring-panel">
-            <div class="mon-hero">
-                <div class="mon-hero-ring">
-                    <canvas id="chart-mon-ring" width="180" height="180"></canvas>
-                    <div class="mon-hero-center">
-                        <span class="mon-hero-pct">${mon.coverage_pct}%</span>
-                        <span class="mon-hero-label">покрытие</span>
-                    </div>
-                </div>
-                <div class="mon-hero-stats">
-                    <div class="mon-stat-big">
-                        <span class="mon-stat-num">${mon.total}</span>
-                        <span class="mon-stat-text">Всего серверов</span>
-                    </div>
-                    <div class="mon-stat-big">
-                        <span class="mon-stat-num" style="color:var(--passing)">${mon.monitored}</span>
-                        <span class="mon-stat-text">Под мониторингом</span>
-                    </div>
-                </div>
+        <!-- Сводка -->
+        <div class="stats-grid">
+            <div class="stat-card accent">
+                <div class="stat-label">Всего серверов</div>
+                <div class="stat-value">${mon.total}</div>
             </div>
-            <div class="mon-levels">
-                <div class="mon-level-card mon-full">
-                    <div class="mon-level-header">
-                        <div class="mon-level-icon">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-                        </div>
-                        <div>
-                            <div class="mon-level-title">Продвинутый мониторинг</div>
-                            <div class="mon-level-desc">Несколько экспортеров / агентов мониторинга</div>
-                        </div>
-                        <span class="mon-level-count">${mon.advanced}</span>
-                    </div>
-                    <div class="mon-level-bar"><div class="mon-level-fill mon-full-fill" style="width:${mon.total ? Math.round(mon.advanced / mon.total * 100) : 0}%"></div></div>
-                    <div class="mon-level-servers">${(mon.servers_advanced || []).map(s => `<span class="tag">${s}</span>`).join('')}</div>
-                </div>
-                <div class="mon-level-card mon-basic">
-                    <div class="mon-level-header">
-                        <div class="mon-level-icon">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
-                        </div>
-                        <div>
-                            <div class="mon-level-title">Базовый мониторинг</div>
-                            <div class="mon-level-desc">Только node_exporter / windows_exporter</div>
-                        </div>
-                        <span class="mon-level-count">${mon.basic}</span>
-                    </div>
-                    <div class="mon-level-bar"><div class="mon-level-fill mon-basic-fill" style="width:${mon.total ? Math.round(mon.basic / mon.total * 100) : 0}%"></div></div>
-                    <div class="mon-level-servers">${(mon.servers_basic || []).map(s => `<span class="tag">${s}</span>`).join('')}</div>
-                </div>
-                ${mon.none > 0 ? `
-                <div class="mon-level-card mon-none">
-                    <div class="mon-level-header">
-                        <div class="mon-level-icon">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
-                        </div>
-                        <div>
-                            <div class="mon-level-title">Без мониторинга</div>
-                            <div class="mon-level-desc">Агенты мониторинга не обнаружены</div>
-                        </div>
-                        <span class="mon-level-count">${mon.none}</span>
-                    </div>
-                    <div class="mon-level-bar"><div class="mon-level-fill mon-none-fill" style="width:${mon.total ? Math.round(mon.none / mon.total * 100) : 0}%"></div></div>
-                    <div class="mon-level-servers">${mon.servers_none.map(s => `<span class="tag">${s}</span>`).join('')}</div>
-                </div>` : ''}
+            <div class="stat-card accent">
+                <div class="stat-label">Всего ИС</div>
+                <div class="stat-value">${isMon.total_is}</div>
+            </div>
+            <div class="stat-card accent">
+                <div class="stat-label">Всего экспортеров</div>
+                <div class="stat-value">${data.total_exporters || 0}</div>
+            </div>
+            <div class="stat-card passing">
+                <div class="stat-label">Продвинутый мон.</div>
+                <div class="stat-value">${mon.advanced}</div>
+            </div>
+            <div class="stat-card warning">
+                <div class="stat-label">Базовый мон.</div>
+                <div class="stat-value">${mon.basic}</div>
+            </div>
+            <div class="stat-card critical">
+                <div class="stat-label">Без метаданных</div>
+                <div class="stat-value">${unassigned.length}</div>
             </div>
         </div>
 
-        <div class="charts-grid" style="margin-top:24px">
-            <div class="chart-card">
-                <div class="chart-card-title">Мониторинг по дата-центрам</div>
-                <canvas id="chart-mon-dc"></canvas>
-            </div>
-            <div class="chart-card">
-                <div class="chart-card-title">Мониторинг по средам</div>
-                <canvas id="chart-mon-env"></canvas>
-            </div>
+        <!-- Серверы по ИС -->
+        <div class="section-title" style="margin-top:24px">Серверы и экспортеры по ИС</div>
+        <div class="table-wrapper">
+            <table class="data-table">
+                <thead><tr><th>ИС</th><th>Серверы</th><th>Экспортеры</th><th>Мониторинг</th><th>ДЦ</th></tr></thead>
+                <tbody>${isRows}</tbody>
+            </table>
         </div>
 
-        <div class="section-title" style="margin-top:32px">Информационные системы на мониторинге</div>
-        <div class="monitoring-panel" style="margin-bottom:20px">
-            <div class="mon-hero" style="margin-bottom:16px">
-                <div class="mon-hero-stats">
-                    <div class="mon-stat-big">
-                        <span class="mon-stat-num" style="color:var(--accent-light)">${data.is_monitoring.total_is}</span>
-                        <span class="mon-stat-text">Всего ИС</span>
-                    </div>
-                    <div class="mon-stat-big">
-                        <span class="mon-stat-num" style="color:var(--passing)">${data.is_monitoring.monitored_is}</span>
-                        <span class="mon-stat-text">На мониторинге</span>
-                    </div>
-                    <div class="mon-stat-big">
-                        <span class="mon-stat-num" style="color:var(--warning)">${data.is_monitoring.total_is - data.is_monitoring.monitored_is}</span>
-                        <span class="mon-stat-text">Без мониторинга</span>
-                    </div>
-                    <div class="mon-stat-big">
-                        <span class="mon-stat-num" style="color:#c4b5fd">${data.is_monitoring.coverage_pct}%</span>
-                        <span class="mon-stat-text">Покрытие ИС</span>
-                    </div>
-                </div>
-            </div>
-            <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Нажмите на переключатель, чтобы отметить ИС как поставленную на мониторинг</p>
-            <div class="systems-panel" id="systemsMonPanel">
-                ${Object.entries(data.hosts_by_system).map(([sysName, info]) => {
-                    if (sysName === 'Unassigned') return '';
-                    const pct = Math.round(info.count / data.monitoring.total * 100);
-                    const svcs = data.services_by_system[sysName] || [];
-                    const checked = info.is_monitored;
-                    const covered = info.all_covered;
-                    return `
-                    <div class="system-card ${checked ? 'system-monitored' : ''}" id="sys-card-${sysName.replace(/[^a-zA-Z0-9]/g, '_')}">
-                        <div class="system-card-header">
-                            <label class="mon-toggle" onclick="event.stopPropagation()">
-                                <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleSystemMonitoring('${sysName.replace(/'/g, "\\'")}', this.checked)">
-                                <span class="mon-toggle-slider"></span>
-                            </label>
-                            <div class="system-card-info">
-                                <div class="system-card-name">${sysName}</div>
-                                <div class="system-card-meta">
-                                    ${info.datacenters.map(dc => '<span class="badge badge-dc">' + dc + '</span>').join('')}
-                                    ${info.environments.map(e => '<span class="badge badge-env">' + e + '</span>').join('')}
-                                    ${covered ? '<span class="badge badge-passing" style="font-size:10px">все хосты покрыты</span>' : ''}
-                                </div>
+        <!-- Серверы без system_name -->
+        ${unassigned.length > 0 ? `
+        <div class="section-title" style="margin-top:24px">Серверы без метаданных (system_name не указан) — ${unassigned.length}</div>
+        <div class="table-wrapper">
+            <table class="data-table">
+                <thead><tr><th style="width:32px"></th><th>Серверы (${unassigned.length})</th></tr></thead>
+                <tbody>
+                    <tr class="expandable-row" onclick="toggleRow('unassigned-row', this)">
+                        <td>${chevronIcon()}</td>
+                        <td class="cell-muted">${unassigned.slice(0, 5).join(', ')}${unassigned.length > 5 ? ' и ещё ' + (unassigned.length - 5) + '...' : ''}</td>
+                    </tr>
+                    <tr class="expand-content" id="unassigned-row">
+                        <td colspan="2">
+                            <div class="expand-body" style="display:flex;flex-wrap:wrap;gap:6px;padding:12px">
+                                ${unassigned.map(s => '<span class="tag">' + s + '</span>').join('')}
                             </div>
-                            <div class="system-card-count">
-                                <span class="system-count-num">${info.count}</span>
-                                <span class="system-count-label">${plural(info.count, 'хост', 'хоста', 'хостов')}</span>
-                            </div>
-                        </div>
-                        <div class="system-card-bar">
-                            <div class="system-card-fill" style="width:${pct}%"></div>
-                        </div>
-                        <div class="system-card-mon-stats">
-                            ${info.mon_full > 0 ? '<span class="inst-badge inst-passing">полный: ' + info.mon_full + '</span>' : ''}
-                            ${info.mon_basic > 0 ? '<span class="inst-badge inst-warning">базовый: ' + info.mon_basic + '</span>' : ''}
-                            ${info.mon_none > 0 ? '<span class="inst-badge" style="background:rgba(100,116,139,0.1);border:1px solid rgba(100,116,139,0.2);color:var(--text-muted)">нет: ' + info.mon_none + '</span>' : ''}
-                        </div>
-                        <div class="system-card-details">
-                            <div class="system-detail-group">
-                                <span class="system-detail-label">Серверы</span>
-                                <div class="system-detail-tags">${info.servers.map(s => '<span class="tag">' + s + '</span>').join('')}</div>
-                            </div>
-                            <div class="system-detail-group">
-                                <span class="system-detail-label">Экспортеры</span>
-                                <div class="system-detail-tags">${svcs.map(s => '<span class="tag ' + getTagClass(s) + '">' + s + '</span>').join('')}</div>
-                            </div>
-                        </div>
-                    </div>`;
-                }).join('')}
-            </div>
-        </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>` : ''}
 
-        <div class="charts-grid" style="margin-top:24px">
-            <div class="chart-card chart-card-wide">
-                <div class="chart-card-title">Хосты по информационным системам</div>
-                <canvas id="chart-hosts-system"></canvas>
-            </div>
-        </div>
-
-        <div class="section-title" style="margin-top:32px">Разбивка инфраструктуры</div>
+        <!-- Графики -->
+        <div class="section-title" style="margin-top:24px">Распределение</div>
         <div class="charts-grid">
-            <div class="chart-card chart-card-wide">
-                <div class="chart-card-title">Экземпляры по экспортерам</div>
-                <canvas id="chart-instances-bar"></canvas>
-            </div>
-
-            <div class="chart-card">
-                <div class="chart-card-title">Экспортеры по категориям</div>
-                <canvas id="chart-svc-cat"></canvas>
-                <div class="chart-legend" id="legend-svc-cat"></div>
-            </div>
-
-            <div class="chart-card">
-                <div class="chart-card-title">Статусы проверок</div>
-                <canvas id="chart-health"></canvas>
-                <div class="chart-legend" id="legend-health"></div>
-            </div>
-
-            <div class="chart-card">
-                <div class="chart-card-title">Серверы по дата-центрам</div>
-                <canvas id="chart-dc"></canvas>
-                <div class="chart-legend" id="legend-dc"></div>
-            </div>
-
-            <div class="chart-card">
-                <div class="chart-card-title">Серверы по средам</div>
-                <canvas id="chart-env"></canvas>
-                <div class="chart-legend" id="legend-env"></div>
-            </div>
-
             <div class="chart-card">
                 <div class="chart-card-title">Серверы по ОС</div>
                 <canvas id="chart-os"></canvas>
                 <div class="chart-legend" id="legend-os"></div>
             </div>
-
             <div class="chart-card">
-                <div class="chart-card-title">Серверы по командам</div>
-                <canvas id="chart-team"></canvas>
-                <div class="chart-legend" id="legend-team"></div>
+                <div class="chart-card-title">Серверы по дата-центрам</div>
+                <canvas id="chart-dc"></canvas>
+                <div class="chart-legend" id="legend-dc"></div>
             </div>
-
-            <div class="chart-card chart-card-wide">
-                <div class="chart-card-title">Экспортеры на сервере</div>
-                <canvas id="chart-svcs-server"></canvas>
+            <div class="chart-card">
+                <div class="chart-card-title">Серверы по средам</div>
+                <canvas id="chart-env"></canvas>
+                <div class="chart-legend" id="legend-env"></div>
             </div>
-
+            <div class="chart-card">
+                <div class="chart-card-title">Мониторинг по средам</div>
+                <canvas id="chart-mon-env"></canvas>
+            </div>
             <div class="chart-card chart-card-wide">
-                <div class="chart-card-title">Состояние по дата-центрам</div>
-                <canvas id="chart-health-dc"></canvas>
+                <div class="chart-card-title">Хосты по ИС</div>
+                <canvas id="chart-hosts-system"></canvas>
             </div>
         </div>
     `;
 
     requestAnimationFrame(() => {
-        drawMonitoringRing('chart-mon-ring', mon);
-        drawMonitoringStackedBar('chart-mon-dc', data.monitoring_by_dc);
-        drawMonitoringStackedBar('chart-mon-env', data.monitoring_by_env);
         const hostsBySystemCounts = {};
-        Object.entries(data.hosts_by_system).forEach(([name, info]) => { hostsBySystemCounts[name] = info.count; });
+        Object.entries(data.hosts_by_system).forEach(([name, info]) => { if (name !== 'Unassigned') hostsBySystemCounts[name] = info.count; });
         drawBarChart('chart-hosts-system', hostsBySystemCounts, ['#6366f1', '#8b5cf6', '#a78bfa', '#22d3ee', '#34d399']);
-        drawDonut('chart-svc-cat', 'legend-svc-cat', data.services_by_category, CHART_COLORS);
-        drawDonut('chart-health', 'legend-health', data.health_status, ['#10b981', '#f59e0b', '#ef4444']);
         drawDonut('chart-dc', 'legend-dc', data.servers_by_dc, CHART_COLORS);
         drawDonut('chart-env', 'legend-env', data.servers_by_env, ['#6366f1', '#22d3ee', '#facc15', '#fb7185']);
         drawDonut('chart-os', 'legend-os', data.servers_by_os, ['#60a5fa', '#34d399', '#fb923c', '#e879f9']);
-        drawDonut('chart-team', 'legend-team', data.servers_by_team, CHART_COLORS.slice(2));
-        drawBarChart('chart-instances-bar', data.instances_per_service, CHART_COLORS);
-        drawBarChart('chart-svcs-server', data.services_per_server, CHART_COLORS.slice(4));
-        drawStackedBar('chart-health-dc', data.health_by_dc);
+        drawMonitoringStackedBar('chart-mon-env', data.monitoring_by_env);
     });
 }
 
