@@ -1451,6 +1451,34 @@ body.sidebar-collapsed .main-content {
     animation: fadeIn 0.3s ease;
 }
 
+.btn-export {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 12px;
+    border-radius: 16px;
+    background: var(--accent-glow);
+    border: 1px solid var(--accent-border);
+    color: var(--accent-light);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: all 0.25s;
+    margin-left: auto;
+}
+
+.btn-export svg {
+    width: 14px;
+    height: 14px;
+}
+
+.btn-export:hover {
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 0 12px rgba(99, 102, 241, 0.3);
+}
+
 .section-title::after {
     content: '';
     flex: 1;

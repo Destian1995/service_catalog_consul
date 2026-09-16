@@ -829,6 +829,88 @@ def admin_toggle_excluded():
     return jsonify({"ok": True, "is_excluded": system_name in excluded})
 
 # ──────────────────────────────────────
+# Inventory export
+# ──────────────────────────────────────
+
+import re as _re
+
+def _detect_dc_group(hostname):
+    """Detect DC group from hostname digits: 9xx→92xx, 2xx→2xx, else→1xx."""
+    m = _re.search(r'(\d{2,})', hostname)
+    if not m:
+        return "1xx"
+    digits = m.group(1)
+    if digits.startswith("92"):
+        return "92xx"
+    if digits.startswith("2"):
+        return "2xx"
+    return "1xx"
+
+@app.route("/api/export/inventory")
+def api_export_inventory():
+    """Generate Ansible inventory.ini for servers without system_name metadata."""
+    from flask import Response
+    nodes = get_nodes()
+
+    # Only unassigned servers
+    unassigned = [n for n in nodes
+                  if not (n["Meta"].get("system_name") or "").strip()
+                  or n["Meta"].get("system_name") == "-"]
+
+    # Classify by DC group + OS
+    groups = {}
+    for n in unassigned:
+        hostname = n["Node"]
+        os_type = (n["Meta"].get("os") or "").strip().lower()
+        if os_type in ("windows", "win", "win32", "win64"):
+            os_label = "windows"
+        else:
+            os_label = "linux"
+        dc = _detect_dc_group(hostname)
+        group_name = f"dc_{dc}_{os_label}"
+        groups.setdefault(group_name, []).append(hostname)
+
+    # Sort hosts within each group
+    for g in groups:
+        groups[g].sort()
+
+    # Build inventory
+    lines = [f"# Ansible inventory — серверы без метаданных (system_name)",
+             f"# Всего: {len(unassigned)} серверов",
+             ""]
+
+    linux_children = []
+    windows_children = []
+
+    # Sorted group names
+    for group_name in sorted(groups.keys()):
+        lines.append(f"[{group_name}]")
+        for host in groups[group_name]:
+            lines.append(host)
+        lines.append("")
+        if "_linux" in group_name:
+            linux_children.append(group_name)
+        elif "_windows" in group_name:
+            windows_children.append(group_name)
+
+    # Children groups
+    if linux_children:
+        lines.append("[linux:children]")
+        for g in sorted(linux_children):
+            lines.append(g)
+        lines.append("")
+
+    if windows_children:
+        lines.append("[windows:children]")
+        for g in sorted(windows_children):
+            lines.append(g)
+        lines.append("")
+
+    content = "\n".join(lines)
+    return Response(content, mimetype="text/plain",
+                    headers={"Content-Disposition": "attachment; filename=inventory.ini"})
+
+# ──────────────────────────────────────
 # Serve SPA + Admin
 # ──────────────────────────────────────
 
