@@ -1118,28 +1118,44 @@ function resetMonFilters() {
 // ═══════════════════════════════════════
 
 // ═══════════════════════════════════════
-// Архитектура ИС — интерактивная схема
+// Архитектура ИС — интерактивная доска
 // ═══════════════════════════════════════
 
 async function renderArchitecture() {
     const el = $('#view-architecture');
     el.innerHTML = LOADER;
     const arch = await api('/api/architecture');
-    const nodes = arch.nodes || [];
-    const links = arch.links || [];
 
     el.innerHTML = `
         <h2 class="page-title">Архитектура информационных систем</h2>
         <div class="arch-toolbar">
-            <span style="font-size:12px;color:var(--text-muted)">Перетаскивайте блоки для настройки. Наведите для деталей.</span>
+            <span style="font-size:12px;color:var(--text-muted)">Колёсико — масштаб. Зажмите пустое место — панорама. Тяните блоки.</span>
+            <div style="margin-left:auto;display:flex;gap:8px">
+                <button class="btn-export" onclick="archZoom(1.2)">+</button>
+                <button class="btn-export" onclick="archZoom(0.8)">−</button>
+                <button class="btn-export" onclick="archFitAll()">Вписать</button>
+                <button class="btn-export" onclick="archSave()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/></svg>
+                    Сохранить
+                </button>
+            </div>
         </div>
         <div class="arch-container" id="archContainer">
             <canvas id="archCanvas"></canvas>
         </div>
+        <div class="arch-legend">
+            <span class="arch-leg-item" style="--lc:#ef4444">Внешняя</span>
+            <span class="arch-leg-item" style="--lc:#6366f1">Прикладная</span>
+            <span class="arch-leg-item" style="--lc:#f59e0b">Back-office</span>
+            <span class="arch-leg-item" style="--lc:#10b981">Front-office</span>
+            <span class="arch-leg-item" style="--lc:#64748b">Технологическая</span>
+        </div>
     `;
 
-    requestAnimationFrame(() => initArchCanvas(nodes, links));
+    requestAnimationFrame(() => initArchCanvas(arch.nodes || [], arch.links || []));
 }
+
+let _archState = null; // global ref for zoom/save
 
 function initArchCanvas(nodes, links) {
     const container = document.getElementById('archContainer');
@@ -1149,167 +1165,296 @@ function initArchCanvas(nodes, links) {
     const dpr = window.devicePixelRatio || 1;
 
     const W = container.clientWidth;
-    const H = Math.max(600, window.innerHeight - 200);
+    const H = Math.max(700, window.innerHeight - 180);
     canvas.width = W * dpr; canvas.height = H * dpr;
     canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
-    ctx.scale(dpr, dpr);
 
-    const typeColors = {
-        external: '#ef4444', app: '#6366f1', backoffice: '#f59e0b',
-        frontoffice: '#10b981', tech: '#64748b'
-    };
-    const typeLabels = {
-        external: 'Внешняя', app: 'Прикладная', backoffice: 'Back-office',
-        frontoffice: 'Front-office', tech: 'Технологическая'
-    };
+    const typeColors = { external: '#ef4444', app: '#6366f1', backoffice: '#f59e0b', frontoffice: '#10b981', tech: '#64748b' };
+    const typeLabels = { external: 'Внешняя', app: 'Прикладная', backoffice: 'Back-office', frontoffice: 'Front-office', tech: 'Технологическая' };
 
-    // Layout: force-directed simple
-    const nodeW = 140, nodeH = 50;
+    const NW = 170, NH = 56;
     const nodeMap = {};
     nodes.forEach((n, i) => {
-        const cols = Math.ceil(Math.sqrt(nodes.length) * 1.5);
-        const row = Math.floor(i / cols);
-        const col = i % cols;
-        nodeMap[n.id] = {
-            ...n, x: 80 + col * (nodeW + 40), y: 80 + row * (nodeH + 50),
-            w: nodeW, h: nodeH, vx: 0, vy: 0
-        };
+        // Use saved position if available, else grid layout
+        if (n.x !== undefined && n.y !== undefined) {
+            nodeMap[n.id] = { ...n, w: NW, h: NH, vx: 0, vy: 0 };
+        } else {
+            const cols = Math.ceil(Math.sqrt(nodes.length));
+            nodeMap[n.id] = {
+                ...n, x: 100 + (i % cols) * (NW + 80), y: 100 + Math.floor(i / cols) * (NH + 80),
+                w: NW, h: NH, vx: 0, vy: 0
+            };
+        }
     });
 
-    // Simple force simulation
-    for (let iter = 0; iter < 80; iter++) {
-        // Repulsion
+    // Run force layout only if no saved positions
+    const hasSaved = nodes.some(n => n.x !== undefined);
+    if (!hasSaved) {
+        const CX = W * 2, CY = H * 1.5; // virtual center
+        // Spread initial positions wider
         const nArr = Object.values(nodeMap);
-        for (let i = 0; i < nArr.length; i++) {
-            for (let j = i + 1; j < nArr.length; j++) {
-                let dx = nArr[j].x - nArr[i].x;
-                let dy = nArr[j].y - nArr[i].y;
-                let dist = Math.sqrt(dx * dx + dy * dy) || 1;
-                let force = 8000 / (dist * dist);
-                nArr[i].vx -= dx / dist * force;
-                nArr[i].vy -= dy / dist * force;
-                nArr[j].vx += dx / dist * force;
-                nArr[j].vy += dy / dist * force;
+        nArr.forEach((n, i) => {
+            const angle = (i / nArr.length) * Math.PI * 2;
+            const radius = 300 + Math.random() * 200;
+            n.x = CX / 2 + Math.cos(angle) * radius;
+            n.y = CY / 2 + Math.sin(angle) * radius;
+        });
+        for (let iter = 0; iter < 150; iter++) {
+            for (let i = 0; i < nArr.length; i++) {
+                for (let j = i + 1; j < nArr.length; j++) {
+                    let dx = nArr[j].x - nArr[i].x, dy = nArr[j].y - nArr[i].y;
+                    let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                    let force = 30000 / (dist * dist);
+                    nArr[i].vx -= dx / dist * force; nArr[i].vy -= dy / dist * force;
+                    nArr[j].vx += dx / dist * force; nArr[j].vy += dy / dist * force;
+                }
             }
+            links.forEach(l => {
+                const a = nodeMap[l.from], b = nodeMap[l.to];
+                if (!a || !b) return;
+                let dx = b.x - a.x, dy = b.y - a.y;
+                let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                let force = (dist - 350) * 0.02;
+                a.vx += dx / dist * force; a.vy += dy / dist * force;
+                b.vx -= dx / dist * force; b.vy -= dy / dist * force;
+            });
+            nArr.forEach(n => {
+                n.x += n.vx * 0.3; n.y += n.vy * 0.3;
+                n.vx *= 0.5; n.vy *= 0.5;
+            });
         }
-        // Attraction from links
-        links.forEach(l => {
-            const a = nodeMap[l.from], b = nodeMap[l.to];
-            if (!a || !b) return;
-            let dx = b.x - a.x, dy = b.y - a.y;
-            let dist = Math.sqrt(dx * dx + dy * dy) || 1;
-            let force = (dist - 200) * 0.03;
-            a.vx += dx / dist * force;
-            a.vy += dy / dist * force;
-            b.vx -= dx / dist * force;
-            b.vy -= dy / dist * force;
-        });
-        // Center gravity
-        nArr.forEach(n => {
-            n.vx += (W / 2 - n.x) * 0.005;
-            n.vy += (H / 2 - n.y) * 0.005;
-            n.x += n.vx * 0.3; n.y += n.vy * 0.3;
-            n.vx *= 0.5; n.vy *= 0.5;
-            n.x = Math.max(10, Math.min(W - nodeW - 10, n.x));
-            n.y = Math.max(10, Math.min(H - nodeH - 10, n.y));
-        });
     }
 
-    let dragNode = null, hoverNode = null, offsetX = 0, offsetY = 0;
+    // Camera state
+    let cam = { x: 0, y: 0, zoom: 0.7 };
+    let dragNode = null, hoverNode = null, panning = false, selectedNode = null, didDrag = false;
+    let panStart = { x: 0, y: 0, cx: 0, cy: 0 };
+    let mouseOff = { x: 0, y: 0 };
+
+    _archState = { nodeMap, links, cam, canvas, W, H };
+
+    function toWorld(sx, sy) {
+        return { x: (sx - cam.x) / cam.zoom, y: (sy - cam.y) / cam.zoom };
+    }
 
     function draw() {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, W, H);
+        // Grid dots
+        ctx.fillStyle = 'rgba(255,255,255,0.03)';
+        const gs = 40 * cam.zoom;
+        const ox = cam.x % gs, oy = cam.y % gs;
+        for (let gx = ox; gx < W; gx += gs) for (let gy = oy; gy < H; gy += gs) {
+            ctx.fillRect(gx, gy, 1, 1);
+        }
+        ctx.setTransform(dpr * cam.zoom, 0, 0, dpr * cam.zoom, dpr * cam.x, dpr * cam.y);
 
         // Links
         links.forEach(l => {
             const a = nodeMap[l.from], b = nodeMap[l.to];
             if (!a || !b) return;
+            const focusId = selectedNode?.id || hoverNode?.id;
+            const active = focusId && (focusId === l.from || focusId === l.to);
             ctx.beginPath();
             ctx.moveTo(a.x + a.w / 2, a.y + a.h / 2);
             ctx.lineTo(b.x + b.w / 2, b.y + b.h / 2);
-            ctx.strokeStyle = (hoverNode && (hoverNode.id === l.from || hoverNode.id === l.to))
-                ? 'rgba(129,140,248,0.6)' : 'rgba(255,255,255,0.08)';
-            ctx.lineWidth = (hoverNode && (hoverNode.id === l.from || hoverNode.id === l.to)) ? 2 : 1;
+            ctx.strokeStyle = active ? 'rgba(129,140,248,0.7)' : 'rgba(255,255,255,0.1)';
+            ctx.lineWidth = active ? 2.5 / cam.zoom : 1 / cam.zoom;
             ctx.stroke();
-            // Arrow
             const angle = Math.atan2(b.y + b.h / 2 - a.y - a.h / 2, b.x + b.w / 2 - a.x - a.w / 2);
             const mx = (a.x + b.x + a.w) / 2, my = (a.y + b.y + a.h) / 2;
             ctx.save(); ctx.translate(mx, my); ctx.rotate(angle);
-            ctx.beginPath(); ctx.moveTo(6, 0); ctx.lineTo(-4, -4); ctx.lineTo(-4, 4); ctx.closePath();
+            const as = 7 / cam.zoom;
+            ctx.beginPath(); ctx.moveTo(as, 0); ctx.lineTo(-as * 0.6, -as * 0.6); ctx.lineTo(-as * 0.6, as * 0.6); ctx.closePath();
             ctx.fillStyle = ctx.strokeStyle; ctx.fill(); ctx.restore();
         });
 
         // Nodes
+        // Build related set for selected/hovered node
+        const focusId = selectedNode?.id || hoverNode?.id;
+        const relatedIds = new Set();
+        if (focusId) {
+            relatedIds.add(focusId);
+            links.forEach(l => {
+                if (l.from === focusId) relatedIds.add(l.to);
+                if (l.to === focusId) relatedIds.add(l.from);
+            });
+        }
+
         Object.values(nodeMap).forEach(n => {
             const color = typeColors[n.type] || '#6366f1';
-            const isHover = hoverNode && hoverNode.id === n.id;
-            // Shadow
-            if (isHover) {
-                ctx.shadowColor = color; ctx.shadowBlur = 16;
-            }
-            // Box
-            ctx.fillStyle = isHover ? 'rgba(30,38,66,0.95)' : 'rgba(26,32,53,0.9)';
+            const isH = hoverNode && hoverNode.id === n.id;
+            const isSel = selectedNode && selectedNode.id === n.id;
+            const dimmed = focusId && !relatedIds.has(n.id);
+            const alpha = dimmed ? 0.25 : 1;
+            if (isH || isSel) { ctx.shadowColor = color; ctx.shadowBlur = 20 / cam.zoom; }
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = (isH || isSel) ? 'rgba(30,38,66,0.97)' : 'rgba(26,32,53,0.92)';
             ctx.strokeStyle = color;
-            ctx.lineWidth = isHover ? 2 : 1;
-            ctx.beginPath();
-            ctx.roundRect(n.x, n.y, n.w, n.h, 8);
-            ctx.fill(); ctx.stroke();
+            ctx.lineWidth = ((isH || isSel) ? 2.5 : 1.2) / cam.zoom;
+            ctx.beginPath(); ctx.roundRect(n.x, n.y, n.w, n.h, 10); ctx.fill(); ctx.stroke();
             ctx.shadowBlur = 0;
-            // Label
             ctx.fillStyle = '#e2e8f0';
-            ctx.font = "600 11px 'Inter', sans-serif";
+            ctx.font = `600 ${13 / cam.zoom}px 'Inter', sans-serif`;
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            const label = n.label.length > 18 ? n.label.substring(0, 16) + '...' : n.label;
-            ctx.fillText(label, n.x + n.w / 2, n.y + n.h / 2 - 7);
-            // Type
+            const label = n.label.length > 22 ? n.label.substring(0, 20) + '...' : n.label;
+            ctx.fillText(label, n.x + n.w / 2, n.y + n.h / 2 - 8);
             ctx.fillStyle = color;
-            ctx.font = "500 9px 'Inter', sans-serif";
-            ctx.fillText(typeLabels[n.type] || n.type, n.x + n.w / 2, n.y + n.h / 2 + 10);
+            ctx.font = `500 ${10 / cam.zoom}px 'Inter', sans-serif`;
+            ctx.fillText(typeLabels[n.type] || n.type, n.x + n.w / 2, n.y + n.h / 2 + 12);
+            ctx.globalAlpha = 1;
         });
 
         // Tooltip
-        if (hoverNode && !dragNode) {
-            const tt = hoverNode.label;
-            const related = links.filter(l => l.from === hoverNode.id || l.to === hoverNode.id).length;
-            const text = tt + ' — ' + related + ' связей';
-            ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.font = "500 12px 'Inter', sans-serif";
-            const tw = ctx.measureText(text).width + 16;
-            ctx.beginPath(); ctx.roundRect(hoverNode.x + hoverNode.w / 2 - tw / 2, hoverNode.y - 30, tw, 22, 4);
-            ctx.fill();
-            ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillText(text, hoverNode.x + hoverNode.w / 2, hoverNode.y - 19);
+        const tooltipNode = selectedNode || (hoverNode && !dragNode ? hoverNode : null);
+        if (tooltipNode) {
+            const related = links.filter(l => l.from === tooltipNode.id || l.to === tooltipNode.id);
+            const ins = related.filter(l => l.to === tooltipNode.id).map(l => nodeMap[l.from]?.label || l.from);
+            const outs = related.filter(l => l.from === tooltipNode.id).map(l => nodeMap[l.to]?.label || l.to);
+            const lines = [tooltipNode.label + ' (' + related.length + ' связей)'];
+            if (ins.length) lines.push('← ' + ins.join(', '));
+            if (outs.length) lines.push('→ ' + outs.join(', '));
+            const fs = 12 / cam.zoom;
+            ctx.font = `500 ${fs}px 'Inter', sans-serif`;
+            const tw = Math.max(...lines.map(l => ctx.measureText(l).width)) + 20;
+            const th = lines.length * (fs + 4) + 10;
+            const tx = tooltipNode.x + tooltipNode.w / 2 - tw / 2;
+            const ty = tooltipNode.y - th - 8;
+            ctx.fillStyle = 'rgba(0,0,0,0.9)';
+            ctx.beginPath(); ctx.roundRect(tx, ty, tw, th, 6); ctx.fill();
+            ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+            lines.forEach((line, i) => {
+                ctx.fillStyle = i === 0 ? '#fff' : '#94a3b8';
+                ctx.fillText(line, tx + tw / 2, ty + 6 + i * (fs + 4));
+            });
         }
     }
 
-    function findNode(mx, my) {
+    function findNode(sx, sy) {
+        const w = toWorld(sx, sy);
         for (const n of Object.values(nodeMap)) {
-            if (mx >= n.x && mx <= n.x + n.w && my >= n.y && my <= n.y + n.h) return n;
+            if (w.x >= n.x && w.x <= n.x + n.w && w.y >= n.y && w.y <= n.y + n.h) return n;
         }
         return null;
     }
 
     canvas.addEventListener('mousedown', e => {
+        didDrag = false;
         const rect = canvas.getBoundingClientRect();
-        const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-        const n = findNode(mx, my);
-        if (n) { dragNode = n; offsetX = mx - n.x; offsetY = my - n.y; canvas.style.cursor = 'grabbing'; }
+        const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+        const n = findNode(sx, sy);
+        if (n) {
+            dragNode = n;
+            const w = toWorld(sx, sy);
+            mouseOff = { x: w.x - n.x, y: w.y - n.y };
+            canvas.style.cursor = 'grabbing';
+        } else {
+            panning = true;
+            panStart = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y };
+            canvas.style.cursor = 'move';
+        }
     });
     canvas.addEventListener('mousemove', e => {
         const rect = canvas.getBoundingClientRect();
-        const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
         if (dragNode) {
-            dragNode.x = mx - offsetX; dragNode.y = my - offsetY; draw();
+            const w = toWorld(sx, sy);
+            dragNode.x = w.x - mouseOff.x; dragNode.y = w.y - mouseOff.y; didDrag = true; draw();
+        } else if (panning) {
+            cam.x = panStart.cx + (e.clientX - panStart.x);
+            cam.y = panStart.cy + (e.clientY - panStart.y);
+            if (Math.abs(e.clientX - panStart.x) > 3 || Math.abs(e.clientY - panStart.y) > 3) didDrag = true;
+            draw();
         } else {
             const prev = hoverNode;
-            hoverNode = findNode(mx, my);
+            hoverNode = findNode(sx, sy);
             canvas.style.cursor = hoverNode ? 'grab' : 'default';
             if (prev !== hoverNode) draw();
         }
     });
-    canvas.addEventListener('mouseup', () => { dragNode = null; canvas.style.cursor = hoverNode ? 'grab' : 'default'; });
-    canvas.addEventListener('mouseleave', () => { dragNode = null; hoverNode = null; draw(); });
+    canvas.addEventListener('mouseup', e => {
+        if (dragNode && !didDrag) {
+            // Click without drag — toggle selection
+            selectedNode = (selectedNode?.id === dragNode.id) ? null : dragNode;
+            draw();
+        } else if (panning && !didDrag) {
+            // Click on empty — deselect
+            selectedNode = null; draw();
+        }
+        dragNode = null; panning = false;
+        canvas.style.cursor = hoverNode ? 'grab' : 'default';
+    });
+    canvas.addEventListener('mouseleave', () => { dragNode = null; panning = false; hoverNode = null; draw(); });
+    canvas.addEventListener('wheel', e => {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        const factor = e.deltaY < 0 ? 1.12 : 0.89;
+        cam.x = mx - (mx - cam.x) * factor;
+        cam.y = my - (my - cam.y) * factor;
+        cam.zoom *= factor;
+        cam.zoom = Math.max(0.15, Math.min(3, cam.zoom));
+        draw();
+    }, { passive: false });
 
-    draw();
+    // Fit all on load
+    archFitAll();
+}
+
+function archZoom(factor) {
+    if (!_archState) return;
+    const { cam, W, H } = _archState;
+    cam.x = W / 2 - (W / 2 - cam.x) * factor;
+    cam.y = H / 2 - (H / 2 - cam.y) * factor;
+    cam.zoom *= factor;
+    cam.zoom = Math.max(0.15, Math.min(3, cam.zoom));
+    const ctx = _archState.canvas.getContext('2d');
+    initArchRedraw();
+}
+
+function archFitAll() {
+    if (!_archState) return;
+    const { nodeMap, cam, W, H } = _archState;
+    const nArr = Object.values(nodeMap);
+    if (!nArr.length) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    nArr.forEach(n => { minX = Math.min(minX, n.x); minY = Math.min(minY, n.y); maxX = Math.max(maxX, n.x + n.w); maxY = Math.max(maxY, n.y + n.h); });
+    const bw = maxX - minX + 100, bh = maxY - minY + 100;
+    cam.zoom = Math.min(W / bw, H / bh, 1.2);
+    cam.x = (W - bw * cam.zoom) / 2 - minX * cam.zoom + 50 * cam.zoom;
+    cam.y = (H - bh * cam.zoom) / 2 - minY * cam.zoom + 50 * cam.zoom;
+    initArchRedraw();
+}
+
+function initArchRedraw() {
+    if (!_archState) return;
+    const canvas = _archState.canvas;
+    const evt = new Event('mousemove');
+    canvas.dispatchEvent(evt);
+    // Force redraw
+    const container = document.getElementById('archContainer');
+    if (container) {
+        const ctx = canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        // Trigger draw via a simulated leave+enter
+        canvas.dispatchEvent(new Event('mouseleave'));
+    }
+}
+
+async function archSave() {
+    if (!_archState) return;
+    const { nodeMap, links } = _archState;
+    const nodes = Object.values(nodeMap).map(n => ({
+        id: n.id, label: n.label, type: n.type, x: Math.round(n.x), y: Math.round(n.y)
+    }));
+    await fetch('/api/architecture', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ nodes, links })
+    });
+    // Toast
+    const t = document.createElement('div');
+    t.className = 'toast toast-ok'; t.textContent = 'Схема сохранена';
+    document.body.appendChild(t); setTimeout(() => t.remove(), 2000);
 }
 
 async function renderInventory() {
