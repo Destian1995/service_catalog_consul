@@ -1235,12 +1235,13 @@ function initArchCanvas(nodes, links) {
     let panStart = { x: 0, y: 0, cx: 0, cy: 0 };
     let mouseOff = { x: 0, y: 0 };
 
-    _archState = { nodeMap, links, cam, canvas, W, H };
+    _archState = { nodeMap, links, cam, canvas, W, H, draw: null };
 
     function toWorld(sx, sy) {
         return { x: (sx - cam.x) / cam.zoom, y: (sy - cam.y) / cam.zoom };
     }
 
+    _archState.draw = draw;
     function draw() {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, W, H);
@@ -1452,26 +1453,16 @@ function archFitAll() {
     if (!nArr.length) return;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     nArr.forEach(n => { minX = Math.min(minX, n.x); minY = Math.min(minY, n.y); maxX = Math.max(maxX, n.x + n.w); maxY = Math.max(maxY, n.y + n.h); });
-    const bw = maxX - minX + 100, bh = maxY - minY + 100;
-    cam.zoom = Math.min(W / bw, H / bh, 1.2);
-    cam.x = (W - bw * cam.zoom) / 2 - minX * cam.zoom + 50 * cam.zoom;
-    cam.y = (H - bh * cam.zoom) / 2 - minY * cam.zoom + 50 * cam.zoom;
+    const pad = 60;
+    const bw = maxX - minX + pad * 2, bh = maxY - minY + pad * 2;
+    cam.zoom = Math.min(W / bw, H / bh);
+    cam.x = (W - bw * cam.zoom) / 2 - (minX - pad) * cam.zoom;
+    cam.y = (H - bh * cam.zoom) / 2 - (minY - pad) * cam.zoom;
     initArchRedraw();
 }
 
 function initArchRedraw() {
-    if (!_archState) return;
-    const canvas = _archState.canvas;
-    const evt = new Event('mousemove');
-    canvas.dispatchEvent(evt);
-    // Force redraw
-    const container = document.getElementById('archContainer');
-    if (container) {
-        const ctx = canvas.getContext('2d');
-        const dpr = window.devicePixelRatio || 1;
-        // Trigger draw via a simulated leave+enter
-        canvas.dispatchEvent(new Event('mouseleave'));
-    }
+    if (_archState && _archState.draw) _archState.draw();
 }
 
 async function archSave() {
