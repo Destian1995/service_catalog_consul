@@ -919,6 +919,249 @@ def api_export_inventory():
                     headers={"Content-Disposition": "attachment; filename=inventory.ini"})
 
 # ──────────────────────────────────────
+# Advanced analytics APIs
+# ──────────────────────────────────────
+
+import csv
+import io
+import time as _time
+from datetime import datetime as _dt
+
+# ── Change history log (in-memory + file) ──
+HISTORY_PATH = os.path.join(os.path.dirname(__file__), "change_history.json")
+
+def _load_history():
+    if os.path.exists(HISTORY_PATH):
+        with open(HISTORY_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
+
+def _save_history(history):
+    with open(HISTORY_PATH, "w", encoding="utf-8") as f:
+        json.dump(history[-500:], f, ensure_ascii=False, indent=2)
+
+def _log_change(action, details=""):
+    history = _load_history()
+    history.append({"time": _dt.now().isoformat(timespec="seconds"), "action": action, "details": details})
+    _save_history(history)
+
+# Hook into toggle endpoints to log changes
+_orig_toggle_mon = admin_toggle_monitored_system
+@app.route("/api/admin/toggle-monitored-system", methods=["POST"], endpoint="toggle_mon_logged")
+def _logged_toggle_mon():
+    resp = _orig_toggle_mon()
+    data = resp.get_json() if hasattr(resp, 'get_json') else {}
+    sn = request.json.get("system_name", "")
+    _log_change("monitoring_toggle", f"{sn}: {'ON' if data.get('is_monitored') else 'OFF'}")
+    return resp
+
+_orig_toggle_excl = admin_toggle_excluded
+@app.route("/api/admin/toggle-excluded-system", methods=["POST"], endpoint="toggle_excl_logged")
+def _logged_toggle_excl():
+    resp = _orig_toggle_excl()
+    sn = request.json.get("system_name", "")
+    _log_change("exclude_toggle", sn)
+    return resp
+
+@app.route("/api/history")
+def api_history():
+    return jsonify(_load_history()[-100:])
+
+# ── Exporter versions ──
+@app.route("/api/exporter-versions")
+def api_exporter_versions():
+    """Returns per-node exporter list with versions."""
+    nodes = get_nodes()
+    result = []
+    for n in nodes[:200]:  # limit to avoid long load
+        detail = get_node_detail(n["Node"])
+        if not detail:
+            continue
+        for svc in detail.get("services", []):
+            result.append({
+                "node": n["Node"],
+                "system_name": n["Meta"].get("system_name", "-"),
+                "service": svc.get("Service", ""),
+                "version": (svc.get("Meta") or {}).get("version", "-"),
+                "port": svc.get("Port", 0),
+            })
+    return jsonify(result)
+
+# ── Expected exporters config ──
+@app.route("/api/admin/expected-exporters", methods=["GET"])
+def api_get_expected():
+    cfg = load_config()
+    return jsonify(cfg.get("expected_exporters", {}))
+
+@app.route("/api/admin/expected-exporters", methods=["POST"])
+def api_set_expected():
+    """Set expected exporter list per IS. Body: {system_name: [exporter_names]}"""
+    cfg = load_config()
+    cfg["expected_exporters"] = request.json.get("expected", {})
+    save_config(cfg)
+    _log_change("expected_exporters_update", str(list(cfg["expected_exporters"].keys())))
+    return jsonify({"ok": True})
+
+# ── Coverage gaps ──
+@app.route("/api/coverage-gaps")
+def api_coverage_gaps():
+    """Find servers where expected exporters are missing."""
+    cfg = load_config()
+    expected = cfg.get("expected_exporters", {})
+    if not expected:
+        return jsonify([])
+
+    nodes = get_nodes()
+    gaps = []
+    for n in nodes:
+        sys_name = (n["Meta"].get("system_name") or "").strip()
+        if not sys_name or sys_name == "-" or sys_name not in expected:
+            continue
+        detail = get_node_detail(n["Node"])
+        actual = set()
+        if detail:
+            actual = {s["Service"] for s in detail.get("services", [])}
+        missing = set(expected[sys_name]) - actual
+        if missing:
+            gaps.append({
+                "node": n["Node"],
+                "system_name": sys_name,
+                "expected": sorted(expected[sys_name]),
+                "actual": sorted(actual),
+                "missing": sorted(missing),
+            })
+    return jsonify(gaps)
+
+# ── Owners map ──
+@app.route("/api/owners")
+def api_owners():
+    """IS → owner mapping from Consul metadata."""
+    nodes = get_nodes()
+    owners = {}
+    for n in nodes:
+        sys_name = (n["Meta"].get("system_name") or "").strip()
+        if not sys_name or sys_name == "-":
+            continue
+        owner = n["Meta"].get("system_owner") or n.get("_raw_meta", {}).get("system_owner", "")
+        if sys_name not in owners:
+            owners[sys_name] = {"owner": owner, "servers": 0, "team": n["Meta"].get("team", "-")}
+        owners[sys_name]["servers"] += 1
+        if owner and not owners[sys_name]["owner"]:
+            owners[sys_name]["owner"] = owner
+    return jsonify(owners)
+
+# ── CSV export ──
+@app.route("/api/export/csv")
+def api_export_csv():
+    """Export full server inventory as CSV."""
+    from flask import Response
+    nodes = get_nodes()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Server", "IP", "IS", "Datacenter", "Environment", "OS", "Team", "Owner", "Exporters"])
+    for n in nodes:
+        detail = get_node_detail(n["Node"])
+        svcs = []
+        if detail:
+            svcs = [s["Service"] for s in detail.get("services", [])]
+        writer.writerow([
+            n["Node"], n["Address"],
+            n["Meta"].get("system_name", "-"),
+            n["Datacenter"],
+            n["Meta"].get("environment", "-"),
+            n["Meta"].get("os", "-"),
+            n["Meta"].get("team", "-"),
+            n["Meta"].get("system_owner", ""),
+            "; ".join(svcs),
+        ])
+    return Response(output.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=servers_report.csv"})
+
+# ── SLA / uptime snapshot ──
+@app.route("/api/sla")
+def api_sla():
+    """Current SLA snapshot per IS — % of passing checks."""
+    nodes = get_nodes()
+    is_checks = {}
+    for n in nodes:
+        sys_name = (n["Meta"].get("system_name") or "").strip()
+        if not sys_name or sys_name == "-":
+            continue
+        detail = get_node_detail(n["Node"])
+        if not detail:
+            continue
+        for c in detail.get("checks", []):
+            if sys_name not in is_checks:
+                is_checks[sys_name] = {"total": 0, "passing": 0}
+            is_checks[sys_name]["total"] += 1
+            if c.get("Status") == "passing":
+                is_checks[sys_name]["passing"] += 1
+
+    result = {}
+    for sys_name, data in is_checks.items():
+        pct = round(data["passing"] / data["total"] * 100, 1) if data["total"] else 100
+        result[sys_name] = {"total": data["total"], "passing": data["passing"], "sla_pct": pct}
+    return jsonify(result)
+
+# ── IS comparison ──
+@app.route("/api/compare")
+def api_compare():
+    """Compare two IS side by side."""
+    is1 = request.args.get("is1", "")
+    is2 = request.args.get("is2", "")
+    if not is1 or not is2:
+        return jsonify({"error": "is1 and is2 required"}), 400
+
+    nodes = get_nodes()
+    def _gather(sys_name):
+        sns = [n for n in nodes if (n["Meta"].get("system_name") or "").strip() == sys_name]
+        exporters = set()
+        checks_total, checks_pass = 0, 0
+        for n in sns:
+            detail = get_node_detail(n["Node"])
+            if detail:
+                for s in detail.get("services", []):
+                    exporters.add(s["Service"])
+                for c in detail.get("checks", []):
+                    checks_total += 1
+                    if c.get("Status") == "passing":
+                        checks_pass += 1
+        return {
+            "servers": len(sns),
+            "server_list": [n["Node"] for n in sns],
+            "exporters": sorted(exporters),
+            "checks_total": checks_total,
+            "checks_passing": checks_pass,
+            "sla_pct": round(checks_pass / checks_total * 100, 1) if checks_total else 100,
+            "dcs": sorted({n["Datacenter"] for n in sns}),
+            "envs": sorted({n["Meta"].get("environment", "-") for n in sns}),
+            "os": sorted({n["Meta"].get("os", "-") for n in sns}),
+        }
+
+    return jsonify({"is1": {"name": is1, **_gather(is1)}, "is2": {"name": is2, **_gather(is2)}})
+
+# ── Heatmap data ──
+@app.route("/api/heatmap")
+def api_heatmap():
+    """DC × IS matrix with server counts."""
+    nodes = get_nodes()
+    matrix = {}
+    all_dcs = set()
+    all_is = set()
+    for n in nodes:
+        dc = n["Datacenter"]
+        sys_name = (n["Meta"].get("system_name") or "").strip() or "Unassigned"
+        all_dcs.add(dc)
+        all_is.add(sys_name)
+        key = f"{dc}|{sys_name}"
+        matrix[key] = matrix.get(key, 0) + 1
+    return jsonify({
+        "datacenters": sorted(all_dcs),
+        "systems": sorted(all_is),
+        "matrix": matrix,
+    })
+
+# ──────────────────────────────────────
 # Serve SPA + Admin
 # ──────────────────────────────────────
 

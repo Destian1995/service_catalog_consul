@@ -63,6 +63,7 @@ function navigate(view) {
     else if (view === 'servers') renderServers();
     else if (view === 'services') renderServices();
     else if (view === 'monitoring') renderMonitoring();
+    else if (view === 'inventory') renderInventory();
     else if (view === 'analytics') renderAnalytics();
 
     const targetView = $(`#view-${view}`);
@@ -1104,6 +1105,156 @@ function resetMonFilters() {
         if (el) el.value = '';
     });
     filterMonitoringCards();
+}
+
+// ═══════════════════════════════════════
+// Инвентаризация
+// ═══════════════════════════════════════
+
+async function renderInventory() {
+    const el = $('#view-inventory');
+    el.innerHTML = LOADER;
+
+    const [owners, sla, heatmap, history, systems] = await Promise.all([
+        api('/api/owners'),
+        api('/api/sla'),
+        api('/api/heatmap'),
+        api('/api/history'),
+        api('/api/systems'),
+    ]);
+
+    // SLA table
+    const slaRows = Object.entries(sla)
+        .sort((a, b) => a[1].sla_pct - b[1].sla_pct)
+        .map(([name, d]) => {
+            const color = d.sla_pct >= 99 ? 'var(--passing)' : d.sla_pct >= 95 ? 'var(--warning)' : 'var(--critical)';
+            return '<tr><td class="cell-name">' + name + '</td>' +
+                '<td class="cell-mono">' + d.total + '</td>' +
+                '<td class="cell-mono">' + d.passing + '</td>' +
+                '<td class="cell-mono" style="color:' + color + '">' + d.sla_pct + '%</td></tr>';
+        }).join('');
+
+    // Owners table
+    const ownerRows = Object.entries(owners)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([name, d]) =>
+            '<tr><td class="cell-name">' + name + '</td>' +
+            '<td>' + (d.owner || '<span style="color:var(--text-muted)">не указан</span>') + '</td>' +
+            '<td>' + d.team + '</td>' +
+            '<td class="cell-mono">' + d.servers + '</td></tr>'
+        ).join('');
+
+    // Heatmap
+    const hDcs = heatmap.datacenters || [];
+    const hSys = (heatmap.systems || []).filter(s => s !== 'Unassigned').slice(0, 50);
+    const hMatrix = heatmap.matrix || {};
+    const maxVal = Math.max(1, ...Object.values(hMatrix));
+    const heatRows = hSys.map(sys =>
+        '<tr><td class="cell-name" title="' + sys + '">' + sys + '</td>' +
+        hDcs.map(dc => {
+            const v = hMatrix[dc + '|' + sys] || 0;
+            const intensity = v > 0 ? Math.max(0.15, v / maxVal) : 0;
+            const bg = v > 0 ? 'rgba(99,102,241,' + intensity.toFixed(2) + ')' : 'transparent';
+            return '<td class="cell-mono" style="background:' + bg + ';text-align:center">' + (v || '') + '</td>';
+        }).join('') + '</tr>'
+    ).join('');
+
+    // History
+    const historyRows = (history || []).slice().reverse().slice(0, 30).map(h =>
+        '<tr><td class="cell-mono" style="font-size:11px">' + h.time + '</td>' +
+        '<td>' + h.action + '</td>' +
+        '<td class="cell-muted">' + (h.details || '') + '</td></tr>'
+    ).join('');
+
+    // Comparison selects
+    const sysOpts = systems.map(s => '<option value="' + s + '">' + s + '</option>').join('');
+
+    el.innerHTML = `
+        <h2 class="page-title">Инвентаризация</h2>
+
+        <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap">
+            <a href="/api/export/csv" download class="btn-export">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Скачать CSV-отчёт
+            </a>
+            <a href="/api/export/inventory" download class="btn-export">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Ansible inventory.ini
+            </a>
+        </div>
+
+        <!-- SLA -->
+        <div class="section-title">SLA по информационным системам</div>
+        <div class="table-wrapper" style="margin-bottom:24px">
+            <table class="data-table">
+                <thead><tr><th style="width:40%">ИС</th><th>Проверки</th><th>Passing</th><th>SLA %</th></tr></thead>
+                <tbody>${slaRows}</tbody>
+            </table>
+        </div>
+
+        <!-- Heatmap -->
+        <div class="section-title">Тепловая карта: ДЦ × ИС</div>
+        <div class="table-wrapper" style="margin-bottom:24px;overflow-x:auto">
+            <table class="data-table" style="table-layout:auto">
+                <thead><tr><th>ИС</th>${hDcs.map(dc => '<th style="text-align:center">' + dc + '</th>').join('')}</tr></thead>
+                <tbody>${heatRows}</tbody>
+            </table>
+        </div>
+
+        <!-- Owners -->
+        <div class="section-title">Ответственные за ИС</div>
+        <div class="table-wrapper" style="margin-bottom:24px">
+            <table class="data-table">
+                <thead><tr><th style="width:30%">ИС</th><th>Ответственный</th><th>Команда</th><th>Серверы</th></tr></thead>
+                <tbody>${ownerRows}</tbody>
+            </table>
+        </div>
+
+        <!-- Comparison -->
+        <div class="section-title">Сравнение ИС</div>
+        <div class="admin-section" style="margin-bottom:24px">
+            <div class="form-row">
+                <select class="filter-select" id="compareIs1" style="flex:1"><option value="">Выберите ИС...</option>${sysOpts}</select>
+                <span style="color:var(--text-muted);font-size:18px">vs</span>
+                <select class="filter-select" id="compareIs2" style="flex:1"><option value="">Выберите ИС...</option>${sysOpts}</select>
+                <button class="btn-export" onclick="runComparison()">Сравнить</button>
+            </div>
+            <div id="comparisonResult"></div>
+        </div>
+
+        <!-- History -->
+        <div class="section-title">История изменений</div>
+        <div class="table-wrapper">
+            <table class="data-table" style="table-layout:auto">
+                <thead><tr><th style="width:160px">Время</th><th style="width:180px">Действие</th><th>Детали</th></tr></thead>
+                <tbody>${historyRows || '<tr><td colspan="3" class="cell-muted" style="text-align:center">Пока нет записей</td></tr>'}</tbody>
+            </table>
+        </div>
+    `;
+}
+
+async function runComparison() {
+    const is1 = document.getElementById('compareIs1')?.value;
+    const is2 = document.getElementById('compareIs2')?.value;
+    const el = document.getElementById('comparisonResult');
+    if (!is1 || !is2) { el.innerHTML = '<p style="color:var(--text-muted);margin-top:12px">Выберите обе ИС</p>'; return; }
+    el.innerHTML = LOADER;
+    const data = await api('/api/compare?is1=' + encodeURIComponent(is1) + '&is2=' + encodeURIComponent(is2));
+    const d1 = data.is1, d2 = data.is2;
+    const rows = [
+        ['Серверы', d1.servers, d2.servers],
+        ['ДЦ', d1.dcs.join(', '), d2.dcs.join(', ')],
+        ['Среды', d1.envs.join(', '), d2.envs.join(', ')],
+        ['ОС', d1.os.join(', '), d2.os.join(', ')],
+        ['Экспортеры', d1.exporters.length, d2.exporters.length],
+        ['Проверки', d1.checks_total, d2.checks_total],
+        ['SLA', d1.sla_pct + '%', d2.sla_pct + '%'],
+    ];
+    el.innerHTML = '<table class="data-table" style="margin-top:16px;table-layout:auto"><thead><tr><th>Параметр</th><th>' + d1.name + '</th><th>' + d2.name + '</th></tr></thead><tbody>' +
+        rows.map(r => '<tr><td class="cell-muted">' + r[0] + '</td><td class="cell-mono">' + r[1] + '</td><td class="cell-mono">' + r[2] + '</td></tr>').join('') +
+        '<tr><td class="cell-muted">Серверы</td><td style="font-size:12px">' + d1.server_list.map(s => '<span class="tag">' + s + '</span>').join(' ') + '</td><td style="font-size:12px">' + d2.server_list.map(s => '<span class="tag">' + s + '</span>').join(' ') + '</td></tr>' +
+        '<tr><td class="cell-muted">Экспортеры</td><td style="font-size:12px">' + d1.exporters.map(s => '<span class="tag">' + s + '</span>').join(' ') + '</td><td style="font-size:12px">' + d2.exporters.map(s => '<span class="tag">' + s + '</span>').join(' ') + '</td></tr>' +
+        '</tbody></table>';
 }
 
 async function renderAnalytics() {
