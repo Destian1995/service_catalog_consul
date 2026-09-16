@@ -1215,25 +1215,42 @@ def api_architecture():
     try:
         nodes = get_nodes()
         # Build IS → stats map
-        # Exporter display names
-        exporter_labels = {
-            "node_exporter": "ОС", "node-exporter": "ОС",
-            "windows_exporter": "ОС (Win)", "windows-exporter": "ОС (Win)",
-            "postgres_exporter": "БД PostgreSQL", "postgres-exporter": "БД PostgreSQL",
-            "mysqld_exporter": "БД MySQL", "mysqld-exporter": "БД MySQL",
-            "mongodb_exporter": "БД MongoDB", "mongodb-exporter": "БД MongoDB",
-            "mongodb_exporter_2": "БД MongoDB", "mongodb-exporter-2": "БД MongoDB",
-            "process_exporter": "Процессы", "process-exporter": "Процессы",
-            "blackbox_exporter": "Доступность", "blackbox-exporter": "Доступность",
-            "cadvisor": "Контейнеры",
-            "telegraf": "Телеметрия",
-            "filebeat": "Логи", "fluentd": "Логи", "vector": "Логи",
-            "prometheus": "Метрики", "vmagent": "Метрики",
-            "alertmanager": "Алерты", "vmalert": "Алерты",
-            "grafana": "Дашборды", "loki": "Логи",
-            "snmp_exporter": "SNMP", "snmp-exporter": "SNMP",
-            "consul-agent": "Discovery", "consul_agent": "Discovery",
-        }
+        # Exporter keyword → human label (matched by substring)
+        exporter_keywords = [
+            ("windows_exporter", "ОС + Процессы"),
+            ("windows-exporter", "ОС + Процессы"),
+            ("node_exporter", "ОС"),
+            ("node-exporter", "ОС"),
+            ("postgres", "БД PostgreSQL"),
+            ("mysql", "БД MySQL"),
+            ("mongodb", "БД MongoDB"),
+            ("mongo", "БД MongoDB"),
+            ("mssql", "БД MSSQL"),
+            ("redis", "БД Redis"),
+            ("oracle", "БД Oracle"),
+            ("process_exporter", "Процессы"),
+            ("process-exporter", "Процессы"),
+            ("blackbox", "Доступность"),
+            ("cadvisor", "Контейнеры"),
+            ("telegraf", "Телеметрия"),
+            ("filebeat", "Логи"),
+            ("fluentd", "Логи"),
+            ("vector", "Логи"),
+            ("loki", "Логи"),
+            ("prometheus", "Метрики"),
+            ("vmagent", "Метрики"),
+            ("alertmanager", "Алерты"),
+            ("vmalert", "Алерты"),
+            ("grafana", "Дашборды"),
+            ("snmp", "SNMP"),
+            ("consul", "Discovery"),
+            ("kafka", "Kafka"),
+            ("rabbitmq", "RabbitMQ"),
+            ("nginx", "Nginx"),
+            ("apache", "Apache"),
+            ("jmx", "JMX"),
+            ("appsoft", "Приложение"),
+        ]
 
         is_stats = {}
         for n in nodes:
@@ -1292,19 +1309,20 @@ def api_architecture():
                 st = is_stats[matched]
                 node["mon_servers"] = st["servers"]
                 node["mon_status"] = "full" if st["has_monitoring"] else "partial"
-                # Build human-readable monitoring summary (deduplicate)
+                # Build human-readable monitoring summary (keyword-based dedup)
                 tags = set()
                 for exp in st["exporters"]:
-                    # Normalize: strip @suffix, _N suffix, instance numbers
-                    base = exp.split("@")[0].split(".")[0]
-                    base = _re.sub(r'[_-]?\d+$', '', base)  # remove trailing numbers
-                    base = base.strip("_- ")
-                    lbl = exporter_labels.get(base) or exporter_labels.get(base.replace("-", "_"))
-                    if lbl:
-                        tags.add(lbl)
-                    elif "exporter" in base.lower() or "monitor" in base.lower():
-                        clean = _re.sub(r'[_-]', ' ', base).strip().title()
-                        tags.add(clean)
+                    exp_lower = exp.lower()
+                    found = False
+                    for keyword, label in exporter_keywords:
+                        if keyword in exp_lower:
+                            tags.add(label)
+                            found = True
+                            break
+                    if not found and ("exporter" in exp_lower or "monitor" in exp_lower):
+                        base = exp.split("@")[0].split(".")[0]
+                        base = _re.sub(r'[_-]?\d+$', '', base).strip("_- ")
+                        tags.add(_re.sub(r'[_-]', ' ', base).strip().title())
                 node["mon_tags"] = sorted(tags)
             else:
                 node["mon_servers"] = 0
