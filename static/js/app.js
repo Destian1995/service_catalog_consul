@@ -1130,7 +1130,10 @@ async function renderArchitecture() {
         <h2 class="page-title">Архитектура информационных систем</h2>
         <div class="arch-toolbar">
             <span style="font-size:12px;color:var(--text-muted)">Колёсико — масштаб. Зажмите пустое место — панорама. Тяните блоки.</span>
-            <div style="margin-left:auto;display:flex;gap:8px">
+            <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn-export" onclick="archAddIS()">+ ИС</button>
+                <button class="btn-export" id="archDeleteBtn" onclick="archDeleteIS()" disabled style="opacity:.4;cursor:not-allowed">− ИС</button>
+                <button class="btn-export" onclick="archAddLink()">+ Связь</button>
                 <button class="btn-export" onclick="archZoom(1.2)">+</button>
                 <button class="btn-export" onclick="archZoom(0.8)">−</button>
                 <button class="btn-export" onclick="archFitAll()">Вписать</button>
@@ -1235,10 +1238,21 @@ function initArchCanvas(nodes, links) {
     let panStart = { x: 0, y: 0, cx: 0, cy: 0 };
     let mouseOff = { x: 0, y: 0 };
 
-    _archState = { nodeMap, links, cam, canvas, W, H, draw: null };
+    _archState = { nodeMap, links, cam, canvas, W, H, draw: null,
+        getSelected: () => selectedNode,
+        clearSelected: () => { selectedNode = null; }
+    };
 
     function toWorld(sx, sy) {
         return { x: (sx - cam.x) / cam.zoom, y: (sy - cam.y) / cam.zoom };
+    }
+
+    function updateDeleteBtn() {
+        const btn = document.getElementById('archDeleteBtn');
+        if (!btn) return;
+        btn.disabled = !selectedNode;
+        btn.style.opacity = selectedNode ? '1' : '0.4';
+        btn.style.cursor = selectedNode ? 'pointer' : 'not-allowed';
     }
 
     _archState.draw = draw;
@@ -1410,10 +1424,10 @@ function initArchCanvas(nodes, links) {
         if (dragNode && !didDrag) {
             // Click without drag — toggle selection
             selectedNode = (selectedNode?.id === dragNode.id) ? null : dragNode;
-            draw();
+            updateDeleteBtn(); draw();
         } else if (panning && !didDrag) {
             // Click on empty — deselect
-            selectedNode = null; draw();
+            selectedNode = null; updateDeleteBtn(); draw();
         }
         dragNode = null; panning = false;
         canvas.style.cursor = hoverNode ? 'grab' : 'default';
@@ -1479,6 +1493,109 @@ async function archSave() {
     const t = document.createElement('div');
     t.className = 'toast toast-ok'; t.textContent = 'Схема сохранена';
     document.body.appendChild(t); setTimeout(() => t.remove(), 2000);
+}
+
+// ── Arch edit helpers ──
+
+function archModalClose() {
+    document.getElementById('archModal')?.remove();
+}
+
+function archShowModal(title, body, onConfirm) {
+    archModalClose();
+    const modal = document.createElement('div');
+    modal.id = 'archModal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999';
+    modal.innerHTML = `
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:24px;width:380px;max-width:90vw">
+            <h3 style="margin:0 0 16px;font-size:16px;color:var(--text)">${title}</h3>
+            ${body}
+            <div style="display:flex;gap:8px;margin-top:20px;justify-content:flex-end">
+                <button class="btn-export" onclick="archModalClose()">Отмена</button>
+                <button class="btn-export" id="archModalOk" style="background:var(--accent);color:#fff">Добавить</button>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', e => { if (e.target === modal) archModalClose(); });
+    document.getElementById('archModalOk').onclick = onConfirm;
+}
+
+function archAddIS() {
+    archShowModal('Добавить ИС',
+        `<div style="display:flex;flex-direction:column;gap:12px">
+            <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">Название / ID</label>
+                <input id="amId" placeholder="Например: MySystem" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:14px">
+            </div>
+            <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">Тип</label>
+                <select id="amType" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:14px">
+                    <option value="app">Прикладная</option>
+                    <option value="external">Внешняя</option>
+                    <option value="backoffice">Back-office</option>
+                    <option value="frontoffice">Front-office</option>
+                    <option value="tech">Технологическая</option>
+                </select>
+            </div>
+        </div>`,
+        () => {
+            const id = document.getElementById('amId').value.trim();
+            if (!id) { document.getElementById('amId').focus(); return; }
+            if (_archState.nodeMap[id]) { alert('ИС с таким ID уже существует'); return; }
+            const type = document.getElementById('amType').value;
+            const { nodeMap, cam, W, H } = _archState;
+            const cx = (W / 2 - cam.x) / cam.zoom;
+            const cy = (H / 2 - cam.y) / cam.zoom;
+            nodeMap[id] = { id, label: id, type, x: cx - 85, y: cy - 28, w: 170, h: 56, vx: 0, vy: 0, mon_status: 'none', mon_servers: 0, mon_tags: [] };
+            archModalClose();
+            initArchRedraw();
+        }
+    );
+    setTimeout(() => document.getElementById('amId')?.focus(), 50);
+}
+
+function archDeleteIS() {
+    if (!_archState) return;
+    const sel = _archState.getSelected();
+    if (!sel) return;
+    if (!confirm(`Удалить ИС «${sel.label}» и все её связи?`)) return;
+    delete _archState.nodeMap[sel.id];
+    const arr = _archState.links;
+    arr.splice(0, arr.length, ...arr.filter(l => l.from !== sel.id && l.to !== sel.id));
+    _archState.clearSelected();
+    const btn = document.getElementById('archDeleteBtn');
+    if (btn) { btn.disabled = true; btn.style.opacity = '0.4'; btn.style.cursor = 'not-allowed'; }
+    initArchRedraw();
+}
+
+function archAddLink() {
+    if (!_archState) return;
+    const ids = Object.keys(_archState.nodeMap);
+    if (ids.length < 2) { alert('Нужно минимум 2 ИС на схеме'); return; }
+    const opts = ids.map(id => `<option value="${id}">${_archState.nodeMap[id].label}</option>`).join('');
+    const sel = _archState.getSelected();
+    archShowModal('Добавить связь',
+        `<div style="display:flex;flex-direction:column;gap:12px">
+            <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">От ИС</label>
+                <select id="amFrom" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:14px">${opts}</select>
+            </div>
+            <div>
+                <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px">К ИС</label>
+                <select id="amTo" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:14px">${opts}</select>
+            </div>
+        </div>`,
+        () => {
+            const from = document.getElementById('amFrom').value;
+            const to = document.getElementById('amTo').value;
+            if (from === to) { alert('Нельзя создать связь ИС с самой собой'); return; }
+            if (_archState.links.some(l => l.from === from && l.to === to)) { alert('Такая связь уже существует'); return; }
+            _archState.links.push({ from, to });
+            archModalClose();
+            initArchRedraw();
+        }
+    );
+    if (sel) setTimeout(() => { const s = document.getElementById('amFrom'); if (s) s.value = sel.id; }, 50);
 }
 
 async function renderInventory() {
