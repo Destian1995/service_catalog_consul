@@ -1101,7 +1101,6 @@ def api_export_csv():
                     headers={"Content-Disposition": "attachment; filename=servers_report.csv"})
 
 # ── SLA / uptime snapshot ──
-@app.route("/api/sla")
 def _is_check_suppressed(check_name, service_name, node_name, suppress_rules):
     """Check if a failing check should be ignored for SLA calculation."""
     for rule in suppress_rules:
@@ -1121,6 +1120,7 @@ def _is_check_suppressed(check_name, service_name, node_name, suppress_rules):
         return True
     return False
 
+@app.route("/api/sla")
 def api_sla():
     """Current SLA snapshot per IS — % of passing checks + problem details."""
     cfg = load_config()
