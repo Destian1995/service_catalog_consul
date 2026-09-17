@@ -79,6 +79,8 @@ def _test_nodes(filters=None):
             result = [n for n in result if n["Meta"].get("environment") == filters["env"]]
         if filters.get("team"):
             result = [n for n in result if n["Meta"].get("team") == filters["team"]]
+        if filters.get("owner"):
+            result = [n for n in result if n["Meta"].get("system_owner") == filters["owner"]]
         if filters.get("system_name"):
             result = [n for n in result if n["Meta"].get("system_name") == filters["system_name"]]
         if filters.get("search"):
@@ -99,6 +101,8 @@ def _live_nodes(filters=None):
             result = [n for n in result if n["Meta"].get("environment") == filters["env"]]
         if filters.get("team"):
             result = [n for n in result if n["Meta"].get("team") == filters["team"]]
+        if filters.get("owner"):
+            result = [n for n in result if n["Meta"].get("system_owner") == filters["owner"]]
         if filters.get("system_name"):
             result = [n for n in result if n["Meta"].get("system_name") == filters["system_name"]]
         if filters.get("search"):
@@ -227,7 +231,7 @@ def api_datacenters():
 
 @app.route("/api/nodes")
 def api_nodes():
-    filters = {k: request.args.get(k) for k in ["dc", "env", "team", "system_name", "search"] if request.args.get(k)}
+    filters = {k: request.args.get(k) for k in ["dc", "env", "team", "owner", "system_name", "search"] if request.args.get(k)}
     return jsonify(get_nodes(filters))
 
 @app.route("/api/nodes/<node_name>")
@@ -363,6 +367,11 @@ def api_tags():
 def api_teams():
     nodes = get_nodes()
     return jsonify(sorted({n["Meta"].get("team", "") for n in nodes if n["Meta"].get("team")}))
+
+@app.route("/api/owners_list")
+def api_owners_list():
+    nodes = get_nodes()
+    return jsonify(sorted({n["Meta"].get("system_owner", "") for n in nodes if n["Meta"].get("system_owner")}))
 
 @app.route("/api/environments")
 def api_environments():

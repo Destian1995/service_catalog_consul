@@ -446,10 +446,10 @@ async function renderServers() {
     const el = $('#view-servers');
     el.innerHTML = LOADER;
 
-    const [dcs, envs, teams, systems] = await Promise.all([
+    const [dcs, envs, owners, systems] = await Promise.all([
         api('/api/datacenters'),
         api('/api/environments'),
-        api('/api/teams'),
+        api('/api/owners_list'),
         api('/api/systems'),
     ]);
 
@@ -480,10 +480,10 @@ async function renderServers() {
                 </select>
             </div>
             <div class="filter-group">
-                <span class="filter-label">Команда</span>
-                <select class="filter-select" id="filterTeam" onchange="applyServerFilters()">
+                <span class="filter-label">Владелец</span>
+                <select class="filter-select" id="filterOwner" onchange="applyServerFilters()">
                     <option value="">Все</option>
-                    ${teams.map(t => `<option value="${t}">${t}</option>`).join('')}
+                    ${owners.map(o => `<option value="${o}">${o}</option>`).join('')}
                 </select>
             </div>
             <input class="filter-search" id="filterServerSearch" placeholder="Поиск серверов..."
@@ -514,14 +514,14 @@ async function applyServerFilters() {
 
     const dc = document.getElementById('filterDc')?.value || '';
     const env = document.getElementById('filterEnv')?.value || '';
-    const team = document.getElementById('filterTeam')?.value || '';
+    const team = document.getElementById('filterOwner')?.value || '';
     const systemName = document.getElementById('filterSystem')?.value || '';
     const search = document.getElementById('filterServerSearch')?.value || '';
 
     let url = '/api/nodes?';
     if (dc) url += `dc=${encodeURIComponent(dc)}&`;
     if (env) url += `env=${encodeURIComponent(env)}&`;
-    if (team) url += `team=${encodeURIComponent(team)}&`;
+    if (team) url += `owner=${encodeURIComponent(team)}&`;
     if (systemName) url += `system_name=${encodeURIComponent(systemName)}&`;
     if (search) url += `search=${encodeURIComponent(search)}&`;
 
@@ -681,7 +681,7 @@ async function applyServerFilters() {
 }
 
 function resetServerFilters() {
-    ['filterSystem', 'filterDc', 'filterEnv', 'filterTeam', 'filterServerSearch'].forEach(id => {
+    ['filterSystem', 'filterDc', 'filterEnv', 'filterOwner', 'filterServerSearch'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
     });
