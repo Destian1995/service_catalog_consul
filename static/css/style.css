@@ -221,10 +221,12 @@ body {
 }
 
 .status-dot {
-    width: 8px;
-    height: 8px;
+    display: inline-block;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     flex-shrink: 0;
+    vertical-align: middle;
 }
 
 .status-passing { background: var(--passing); box-shadow: 0 0 8px var(--passing); }

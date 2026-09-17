@@ -556,12 +556,20 @@ async function applyServerFilters() {
                     const node = nodes[i];
                     const services = detail.services || [];
                     const checks = detail.checks || [];
-                    const critCount = checks.filter(c => c.Status === 'critical').length;
-                    const warnCount = checks.filter(c => c.Status === 'warning').length;
-                    const passCount = checks.filter(c => c.Status === 'passing').length;
+                    // Consul-agent health (serfHealth = node reachability)
+                    const serfCheck = checks.find(c => c.CheckID === 'serfHealth');
+                    const agentDown = serfCheck?.Status === 'critical';
+                    // Service-level checks (exporters)
+                    const svcChecks = checks.filter(c => c.CheckID !== 'serfHealth');
+                    const svcCrit = svcChecks.filter(c => c.Status === 'critical').length;
+                    const svcWarn = svcChecks.filter(c => c.Status === 'warning').length;
+                    // Red: consul-agent unreachable (все включая агент лежат)
+                    // Yellow: агент живой, но есть проблемные экспортеры
+                    // Green: всё штатно
                     let overallStatus = 'passing';
-                    if (critCount > 0) overallStatus = 'critical';
-                    else if (warnCount > 0) overallStatus = 'warning';
+                    if (agentDown) overallStatus = 'critical';
+                    else if (svcCrit > 0 || svcWarn > 0) overallStatus = 'warning';
+                    const critCount = svcCrit; const warnCount = svcWarn; const passCount = svcChecks.filter(c => c.Status === 'passing').length;
                     const rowId = `server-row-${i}`;
 
                     return `
