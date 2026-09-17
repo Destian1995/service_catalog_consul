@@ -1273,19 +1273,23 @@ function initArchCanvas(nodes, links) {
             const a = nodeMap[l.from], b = nodeMap[l.to];
             if (!a || !b) return;
             const focusId = selectedNode?.id || hoverNode?.id;
-            const active = focusId && (focusId === l.from || focusId === l.to);
+            const isOut = focusId && focusId === l.from; // исходящая от выбранной
+            const isIn  = focusId && focusId === l.to;   // входящая к выбранной
+            const color = isOut ? 'rgba(99,102,241,0.85)'   // синяя — «от»
+                        : isIn  ? 'rgba(16,185,129,0.85)'   // зелёная — «до»
+                        : 'rgba(255,255,255,0.1)';
             ctx.beginPath();
             ctx.moveTo(a.x + a.w / 2, a.y + a.h / 2);
             ctx.lineTo(b.x + b.w / 2, b.y + b.h / 2);
-            ctx.strokeStyle = active ? 'rgba(129,140,248,0.7)' : 'rgba(255,255,255,0.1)';
-            ctx.lineWidth = active ? 2.5 / cam.zoom : 1 / cam.zoom;
+            ctx.strokeStyle = color;
+            ctx.lineWidth = (isOut || isIn) ? 2.5 / cam.zoom : 1 / cam.zoom;
             ctx.stroke();
             const angle = Math.atan2(b.y + b.h / 2 - a.y - a.h / 2, b.x + b.w / 2 - a.x - a.w / 2);
             const mx = (a.x + b.x + a.w) / 2, my = (a.y + b.y + a.h) / 2;
             ctx.save(); ctx.translate(mx, my); ctx.rotate(angle);
             const as = 7 / cam.zoom;
             ctx.beginPath(); ctx.moveTo(as, 0); ctx.lineTo(-as * 0.6, -as * 0.6); ctx.lineTo(-as * 0.6, as * 0.6); ctx.closePath();
-            ctx.fillStyle = ctx.strokeStyle; ctx.fill(); ctx.restore();
+            ctx.fillStyle = color; ctx.fill(); ctx.restore();
         });
 
         // Nodes
