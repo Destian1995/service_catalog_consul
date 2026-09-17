@@ -1102,28 +1102,60 @@ def api_export_csv():
 
 # ── SLA / uptime snapshot ──
 @app.route("/api/sla")
+def _is_check_suppressed(check_name, service_name, node_name, suppress_rules):
+    """Check if a failing check should be ignored for SLA calculation."""
+    for rule in suppress_rules:
+        rcheck = (rule.get("check") or "").lower()
+        rservice = (rule.get("service") or "").lower()
+        rnode = (rule.get("node") or "").lower()
+        cn = check_name.lower()
+        sn = service_name.lower()
+        nn = node_name.lower()
+        # Match: empty rule field = any; non-empty = substring match
+        if rcheck and rcheck not in cn:
+            continue
+        if rservice and rservice not in sn:
+            continue
+        if rnode and rnode not in nn:
+            continue
+        return True
+    return False
+
 def api_sla():
     """Current SLA snapshot per IS — % of passing checks + problem details."""
+    cfg = load_config()
+    suppress_rules = cfg.get("sla_suppress_rules", [])
+    inventory_excluded = set(cfg.get("inventory_excluded_systems", []))
+
     nodes = get_nodes()
     is_checks = {}
     for n in nodes:
         sys_name = (n["Meta"].get("system_name") or "").strip()
         if not sys_name or sys_name == "-":
             continue
+        if sys_name in inventory_excluded:
+            continue
         detail = get_node_detail(n["Node"])
         if not detail:
             continue
         if sys_name not in is_checks:
-            is_checks[sys_name] = {"total": 0, "passing": 0, "problems": []}
+            is_checks[sys_name] = {"total": 0, "passing": 0, "problems": [], "suppressed": 0}
         for c in detail.get("checks", []):
-            is_checks[sys_name]["total"] += 1
-            if c.get("Status") == "passing":
+            status = c.get("Status", "passing")
+            if status == "passing":
+                is_checks[sys_name]["total"] += 1
+                is_checks[sys_name]["passing"] += 1
+            elif _is_check_suppressed(c.get("Name", ""), c.get("ServiceName", ""), n["Node"], suppress_rules):
+                is_checks[sys_name]["suppressed"] += 1
+                # Suppressed = counted as passing for SLA
+                is_checks[sys_name]["total"] += 1
                 is_checks[sys_name]["passing"] += 1
             else:
+                is_checks[sys_name]["total"] += 1
                 is_checks[sys_name]["problems"].append({
                     "node": n["Node"],
                     "check": c.get("Name", ""),
-                    "status": c.get("Status", ""),
+                    "status": status,
                     "service": c.get("ServiceName", ""),
                     "output": (c.get("Output") or "")[:200],
                 })
@@ -1133,6 +1165,7 @@ def api_sla():
         pct = round(data["passing"] / data["total"] * 100, 1) if data["total"] else 100
         result[sys_name] = {
             "total": data["total"], "passing": data["passing"], "sla_pct": pct,
+            "suppressed": data["suppressed"],
             "problems": data["problems"][:50],
         }
     return jsonify(result)
@@ -1194,6 +1227,32 @@ def api_heatmap():
         "systems": sorted(all_is),
         "matrix": matrix,
     })
+
+# ── Inventory exclusions + SLA suppression ──
+
+@app.route("/api/admin/inventory-excluded", methods=["GET"])
+def api_get_inventory_excluded():
+    return jsonify(load_config().get("inventory_excluded_systems", []))
+
+@app.route("/api/admin/inventory-excluded", methods=["POST"])
+def api_set_inventory_excluded():
+    cfg = load_config()
+    cfg["inventory_excluded_systems"] = sorted(set(request.json.get("systems", [])))
+    save_config(cfg)
+    _log_change("inventory_exclusion_update", str(cfg["inventory_excluded_systems"]))
+    return jsonify({"ok": True})
+
+@app.route("/api/admin/sla-suppress", methods=["GET"])
+def api_get_sla_suppress():
+    return jsonify(load_config().get("sla_suppress_rules", []))
+
+@app.route("/api/admin/sla-suppress", methods=["POST"])
+def api_set_sla_suppress():
+    cfg = load_config()
+    cfg["sla_suppress_rules"] = request.json.get("rules", [])
+    save_config(cfg)
+    _log_change("sla_suppress_update", f"{len(cfg['sla_suppress_rules'])} rules")
+    return jsonify({"ok": True})
 
 # ── Architecture / IS dependencies ──
 ARCH_PATH = os.path.join(os.path.dirname(__file__), "architecture.json")
