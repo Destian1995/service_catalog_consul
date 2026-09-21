@@ -1838,8 +1838,8 @@ async function renderOwnersMgmt() {
             html += `<div class="table-wrapper"><table class="data-table"><thead><tr>
                 <th style="width:22%">Владелец</th>
                 <th>Серверы</th>
-                <th style="width:280px">Добавить сервер</th>
-                <th style="width:60px"></th>
+                <th style="width:320px">Добавить сервер</th>
+                <th style="width:90px"></th>
             </tr></thead><tbody>`;
 
             owners.forEach(owner => {
@@ -1858,10 +1858,10 @@ async function renderOwnersMgmt() {
                                 <option value="">— выберите —</option>
                                 ${freeOpts}
                             </select>
-                            <button class="btn-export" onclick="ownerAssignServer('${owner}')">+</button>
+                            <button class="btn-export" style="padding:6px 14px;font-size:13px" onclick="ownerAssignServer('${owner}')">Добавить</button>
                         </div>
                     </td>
-                    <td><button class="btn-export" style="color:var(--critical)" onclick="ownerDelete('${owner}')" title="Удалить владельца">&times;</button></td>
+                    <td><button class="btn-export" style="padding:6px 14px;font-size:13px;color:var(--critical);border-color:var(--critical)" onclick="ownerDelete('${owner}')" title="Удалить владельца">Удалить</button></td>
                 </tr>`;
             });
             html += `</tbody></table></div>`;
