@@ -1263,6 +1263,30 @@ def api_set_sla_suppress():
     _log_change("sla_suppress_update", f"{len(cfg['sla_suppress_rules'])} rules")
     return jsonify({"ok": True})
 
+# ── Owner assignments (local) ──
+OWNERS_PATH = os.path.join(os.path.dirname(__file__), "owner_assignments.json")
+
+def _load_owner_assignments():
+    if os.path.exists(OWNERS_PATH):
+        with open(OWNERS_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+def _save_owner_assignments(data):
+    with open(OWNERS_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+@app.route("/api/owner_assignments")
+def api_owner_assignments():
+    return jsonify(_load_owner_assignments())
+
+@app.route("/api/owner_assignments", methods=["POST"])
+def api_save_owner_assignments():
+    data = request.json
+    _save_owner_assignments(data)
+    _log_change("owner_assignments_update", f"{len(data)} owners")
+    return jsonify({"ok": True})
+
 # ── Architecture / IS dependencies ──
 ARCH_PATH = os.path.join(os.path.dirname(__file__), "architecture.json")
 

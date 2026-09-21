@@ -65,6 +65,7 @@ function navigate(view) {
     else if (view === 'monitoring') renderMonitoring();
     else if (view === 'architecture') renderArchitecture();
     else if (view === 'inventory') renderInventory();
+    else if (view === 'owners') renderOwnersMgmt();
     else if (view === 'analytics') renderAnalytics();
 
     const targetView = $(`#view-${view}`);
@@ -607,6 +608,7 @@ async function applyServerFilters() {
                                             <div class="info-card">
                                                 <div class="info-card-title">Организация</div>
                                                 <div class="info-row"><span class="info-key">Среда</span><span class="info-value">${node.Meta.environment}</span></div>
+                                                <div class="info-row"><span class="info-key">Владелец</span><span class="info-value">${node.Meta.system_owner || '-'}</span></div>
                                                 <div class="info-row"><span class="info-key">Команда</span><span class="info-value">${node.Meta.team}</span></div>
                                                 <div class="info-row"><span class="info-key">Дата-центр</span><span class="info-value">${node.Datacenter}</span></div>
                                                 <div class="info-row"><span class="info-key">ИС</span><span class="info-value">${node.Meta.system_name || '-'}</span></div>
@@ -1786,6 +1788,140 @@ async function runComparison() {
         '<tr><td class="cell-muted">Серверы</td><td class="cmp-cell">' + _collapsibleTags(d1.server_list, 3, 'cmp-srv1') + '</td><td class="cmp-cell">' + _collapsibleTags(d2.server_list, 3, 'cmp-srv2') + '</td></tr>' +
         '<tr><td class="cell-muted">Экспортеры</td><td class="cmp-cell">' + _collapsibleTags(d1.exporters, 4, 'cmp-exp1') + '</td><td class="cmp-cell">' + _collapsibleTags(d2.exporters, 4, 'cmp-exp2') + '</td></tr>' +
         '</tbody></table>';
+}
+
+// ═══════════════════════════════════════
+// Владельцы — управление
+// ═══════════════════════════════════════
+
+let _ownerData = {}; // { ownerName: [serverName, ...], ... }
+
+async function renderOwnersMgmt() {
+    const el = $('#view-owners');
+    el.innerHTML = LOADER;
+
+    const [assignments, nodes] = await Promise.all([
+        api('/api/owner_assignments'),
+        api('/api/nodes'),
+    ]);
+    _ownerData = assignments || {};
+
+    const allServers = nodes.map(n => n.Node).sort();
+
+    function assignedServers() {
+        const s = new Set();
+        Object.values(_ownerData).forEach(arr => arr.forEach(sv => s.add(sv)));
+        return s;
+    }
+
+    function renderContent() {
+        const owners = Object.keys(_ownerData).sort();
+        const assigned = assignedServers();
+        const freeServers = allServers.filter(s => !assigned.has(s));
+
+        let html = `
+            <h2 class="page-title">Владельцы</h2>
+            <div class="arch-toolbar">
+                <span style="font-size:12px;color:var(--text-muted)">Назначение владельцев серверам. Данные хранятся локально.</span>
+                <div style="margin-left:auto;display:flex;gap:8px">
+                    <button class="btn-export" onclick="ownerAdd()">+ Владелец</button>
+                    <button class="btn-export" onclick="ownerSave()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/></svg>
+                        Сохранить
+                    </button>
+                </div>
+            </div>`;
+
+        if (owners.length === 0) {
+            html += `<div class="empty-state"><p>Нет владельцев. Нажмите «+ Владелец» чтобы добавить.</p></div>`;
+        } else {
+            html += `<div class="table-wrapper"><table class="data-table"><thead><tr>
+                <th style="width:22%">Владелец</th>
+                <th>Серверы</th>
+                <th style="width:280px">Добавить сервер</th>
+                <th style="width:60px"></th>
+            </tr></thead><tbody>`;
+
+            owners.forEach(owner => {
+                const servers = _ownerData[owner] || [];
+                const serverBadges = servers.length === 0
+                    ? '<span style="color:var(--text-muted);font-size:12px">нет серверов</span>'
+                    : servers.map(s => `<span class="badge badge-dc" style="cursor:pointer;margin:2px" title="Убрать" onclick="ownerRemoveServer('${owner}', '${s}')">${s} &times;</span>`).join(' ');
+
+                const freeOpts = freeServers.map(s => `<option value="${s}">${s}</option>`).join('');
+                html += `<tr>
+                    <td class="cell-name">${owner}</td>
+                    <td>${serverBadges}</td>
+                    <td>
+                        <div style="display:flex;gap:6px">
+                            <select id="ownerSel-${owner.replace(/\s/g, '_')}" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);font-size:13px">
+                                <option value="">— выберите —</option>
+                                ${freeOpts}
+                            </select>
+                            <button class="btn-export" onclick="ownerAssignServer('${owner}')">+</button>
+                        </div>
+                    </td>
+                    <td><button class="btn-export" style="color:var(--critical)" onclick="ownerDelete('${owner}')" title="Удалить владельца">&times;</button></td>
+                </tr>`;
+            });
+            html += `</tbody></table></div>`;
+        }
+
+        // Unassigned servers
+        const unassigned = freeServers;
+        if (unassigned.length > 0) {
+            html += `<div style="margin-top:24px">
+                <h3 style="font-size:14px;color:var(--text-muted);margin-bottom:8px">Серверы без владельца (${unassigned.length})</h3>
+                <div style="display:flex;flex-wrap:wrap;gap:4px">
+                    ${unassigned.map(s => `<span class="badge badge-env" style="font-size:11px">${s}</span>`).join(' ')}
+                </div>
+            </div>`;
+        }
+
+        el.innerHTML = html;
+    }
+
+    window._ownersRender = renderContent;
+    window._ownersAllServers = allServers;
+    renderContent();
+}
+
+function ownerAdd() {
+    const name = prompt('Имя владельца:');
+    if (!name || !name.trim()) return;
+    const n = name.trim();
+    if (_ownerData[n]) { alert('Владелец уже существует'); return; }
+    _ownerData[n] = [];
+    window._ownersRender();
+}
+
+function ownerDelete(name) {
+    if (!confirm(`Удалить владельца «${name}» и отвязать все серверы?`)) return;
+    delete _ownerData[name];
+    window._ownersRender();
+}
+
+function ownerAssignServer(owner) {
+    const selId = `ownerSel-${owner.replace(/\s/g, '_')}`;
+    const sel = document.getElementById(selId);
+    if (!sel || !sel.value) return;
+    _ownerData[owner].push(sel.value);
+    window._ownersRender();
+}
+
+function ownerRemoveServer(owner, server) {
+    _ownerData[owner] = (_ownerData[owner] || []).filter(s => s !== server);
+    window._ownersRender();
+}
+
+async function ownerSave() {
+    await fetch('/api/owner_assignments', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(_ownerData)
+    });
+    const t = document.createElement('div');
+    t.className = 'toast toast-ok'; t.textContent = 'Владельцы сохранены';
+    document.body.appendChild(t); setTimeout(() => t.remove(), 2000);
 }
 
 async function renderAnalytics() {
