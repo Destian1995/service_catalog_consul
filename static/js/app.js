@@ -1915,13 +1915,20 @@ function ownerRemoveServer(owner, server) {
 }
 
 async function ownerSave() {
-    await fetch('/api/owner_assignments', {
+    const res = await fetch('/api/owner_assignments', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(_ownerData)
     });
+    const result = await res.json();
     const t = document.createElement('div');
-    t.className = 'toast toast-ok'; t.textContent = 'Владельцы сохранены';
-    document.body.appendChild(t); setTimeout(() => t.remove(), 2000);
+    if (result.consul_errors && result.consul_errors.length) {
+        t.className = 'toast toast-warn';
+        t.textContent = `Сохранено, но Consul не обновлён для: ${result.consul_errors.join(', ')}`;
+        document.body.appendChild(t); setTimeout(() => t.remove(), 5000);
+    } else {
+        t.className = 'toast toast-ok'; t.textContent = 'Владельцы сохранены и синхронизированы с Consul';
+        document.body.appendChild(t); setTimeout(() => t.remove(), 2000);
+    }
 }
 
 async function renderAnalytics() {

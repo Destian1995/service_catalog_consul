@@ -89,6 +89,29 @@ class ConsulClient:
             log.error(f"[DC:{self.dc_name}] ERR {url}: {type(e).__name__}: {e}")
         return None
 
+    def _put(self, path, data):
+        url = f"{self.base_url}/v1{path}"
+        try:
+            r = requests.put(url, headers=self.headers, json=data,
+                             verify=self.verify, timeout=DEFAULT_TIMEOUT)
+            log.debug(f"[DC:{self.dc_name}] PUT {path} -> {r.status_code}")
+            r.raise_for_status()
+            return True
+        except Exception as e:
+            log.error(f"[DC:{self.dc_name}] PUT ERR {url}: {e}")
+            return False
+
+    def update_node_meta(self, node_id, node_name, address, datacenter, meta):
+        """Update node metadata via PUT /v1/catalog/register."""
+        payload = {
+            "ID": node_id,
+            "Node": node_name,
+            "Address": address,
+            "Datacenter": datacenter,
+            "NodeMeta": meta,
+        }
+        return self._put("/catalog/register", payload)
+
     def get_nodes(self):
         raw = self._get("/catalog/nodes")
         if not raw:
@@ -202,6 +225,20 @@ class ConsulAggregator:
         log.info(f"Fetched {len(all_nodes)} nodes in {elapsed:.1f}s")
         _cache.set("all_nodes", all_nodes)
         return all_nodes
+
+    def update_node_meta_field(self, node_name, field, value):
+        """Find node across DCs and update a single metadata field."""
+        for client in self.clients:
+            nodes = client.get_nodes()
+            node = next((n for n in nodes if n["Node"] == node_name), None)
+            if node:
+                raw_meta = dict(node.get("_raw_meta") or {})
+                raw_meta[field] = value
+                return client.update_node_meta(
+                    node["ID"], node["Node"], node["Address"],
+                    node["Datacenter"], raw_meta
+                )
+        return False
 
     def get_node_detail(self, node_name):
         cache_key = f"node_detail:{node_name}"

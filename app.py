@@ -1285,6 +1285,24 @@ def api_save_owner_assignments():
     data = request.json
     _save_owner_assignments(data)
     _log_change("owner_assignments_update", f"{len(data)} owners")
+
+    # Sync system_owner to Consul metadata
+    if get_mode() != "test":
+        from consul_client import ConsulAggregator
+        agg = ConsulAggregator(load_config())
+        # Build server→owner map
+        server_owner = {}
+        for owner, servers in data.items():
+            for srv in servers:
+                server_owner[srv] = owner
+        # Update each affected node in Consul
+        errors = []
+        for srv, owner in server_owner.items():
+            if not agg.update_node_meta_field(srv, "system_owner", owner):
+                errors.append(srv)
+        if errors:
+            return jsonify({"ok": True, "consul_errors": errors})
+
     return jsonify({"ok": True})
 
 # ── Architecture / IS dependencies ──
