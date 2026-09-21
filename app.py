@@ -1278,7 +1278,33 @@ def _save_owner_assignments(data):
 
 @app.route("/api/owner_assignments")
 def api_owner_assignments():
-    return jsonify(_load_owner_assignments())
+    """Merge local assignments with Consul system_owner metadata."""
+    local = _load_owner_assignments()
+    # Collect all servers already tracked locally
+    local_servers = set()
+    for srvs in local.values():
+        local_servers.update(srvs)
+
+    # Enrich with Consul data — add servers that have system_owner in Consul
+    # but are missing from local assignments
+    nodes = get_nodes()
+    for n in nodes:
+        owner = (n["Meta"].get("system_owner") or "").strip()
+        srv = n["Node"]
+        if not owner:
+            continue
+        if srv in local_servers:
+            continue  # already tracked locally, local version wins
+        if owner not in local:
+            local[owner] = []
+        local[owner].append(srv)
+        local_servers.add(srv)
+
+    # Sort server lists for consistency
+    for owner in local:
+        local[owner] = sorted(set(local[owner]))
+
+    return jsonify(local)
 
 @app.route("/api/owner_assignments", methods=["POST"])
 def api_save_owner_assignments():
@@ -1290,16 +1316,25 @@ def api_save_owner_assignments():
     if get_mode() != "test":
         from consul_client import ConsulAggregator
         agg = ConsulAggregator(load_config())
-        # Build server→owner map
-        server_owner = {}
+
+        # Build server→owner from new data
+        new_map = {}
         for owner, servers in data.items():
             for srv in servers:
-                server_owner[srv] = owner
-        # Update each affected node in Consul
+                new_map[srv] = owner
+
+        # Also clear system_owner for servers that were removed from all owners
+        nodes = get_nodes()
         errors = []
-        for srv, owner in server_owner.items():
-            if not agg.update_node_meta_field(srv, "system_owner", owner):
-                errors.append(srv)
+        for n in nodes:
+            srv = n["Node"]
+            consul_owner = (n["Meta"].get("system_owner") or "").strip()
+            new_owner = new_map.get(srv, "")
+            # Only update if changed
+            if new_owner != consul_owner:
+                if not agg.update_node_meta_field(srv, "system_owner", new_owner):
+                    errors.append(srv)
+
         if errors:
             return jsonify({"ok": True, "consul_errors": errors})
 

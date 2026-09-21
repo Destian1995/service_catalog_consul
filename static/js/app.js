@@ -1822,7 +1822,7 @@ async function renderOwnersMgmt() {
         let html = `
             <h2 class="page-title">Владельцы</h2>
             <div class="arch-toolbar">
-                <span style="font-size:12px;color:var(--text-muted)">Назначение владельцев серверам. Данные хранятся локально.</span>
+                <span style="font-size:12px;color:var(--text-muted)">Назначение владельцев серверам. Синхронизация с Consul.</span>
                 <div style="margin-left:auto;display:flex;gap:8px">
                     <button class="btn-export" onclick="ownerAdd()">+ Владелец</button>
                     <button class="btn-export" onclick="ownerSave()">
