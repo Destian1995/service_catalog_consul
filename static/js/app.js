@@ -621,6 +621,21 @@ async function applyServerFilters() {
                                                 <div class="info-row"><span class="info-key">Критич.</span><span class="info-value" style="color:var(--critical)">${critCount}</span></div>
                                             </div>
                                         </div>
+                                        ${services.length > 0 ? `
+                                        <div style="margin-top:12px">
+                                            <div class="info-card" style="width:100%">
+                                                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                                                    <div class="info-card-title" style="margin:0">Метрики экспортеров</div>
+                                                    <button class="btn-export" onclick="event.stopPropagation(); checkOverviewMetrics('${node.Address}', '${rowId}', ${JSON.stringify(services.map(s => ({name: s.Service, port: s.Port}))).replace(/"/g, '&quot;')})">Проверить</button>
+                                                </div>
+                                                ${services.map((svc, si) => `
+                                                    <div class="info-row">
+                                                        <span class="info-key">${svc.Service} :${svc.Port}</span>
+                                                        <span class="info-value" id="${rowId}-ov-mc-${si}">—</span>
+                                                    </div>
+                                                `).join('')}
+                                            </div>
+                                        </div>` : ''}
                                     </div>
 
                                     <div class="expand-panel" id="${rowId}-services">
@@ -1828,6 +1843,12 @@ async function checkExporterMetrics(host, port, service, targetEl) {
     } catch(e) {
         el.innerHTML = `<span style="color:var(--critical)">ошибка</span>`;
     }
+}
+
+async function checkOverviewMetrics(host, rowId, services) {
+    await Promise.all(services.map((svc, i) =>
+        checkExporterMetrics(host, svc.port, svc.name, `${rowId}-ov-mc-${i}`)
+    ));
 }
 
 async function checkAllMetrics(host, rowId) {
