@@ -625,10 +625,13 @@ async function applyServerFilters() {
 
                                     <div class="expand-panel" id="${rowId}-services">
                                         ${services.length === 0 ? '<div class="empty-state"><p>Нет экспортеров</p></div>' :
-                                        `<table class="data-table nested-table">
-                                            <thead><tr><th>Статус</th><th>Экспортер</th><th>Порт</th><th>Версия</th><th>Теги</th></tr></thead>
+                                        `<div style="margin-bottom:8px;text-align:right">
+                                            <button class="btn-export" onclick="event.stopPropagation(); checkAllMetrics('${node.Address}', '${rowId}')">Проверить все метрики</button>
+                                        </div>
+                                        <table class="data-table nested-table">
+                                            <thead><tr><th>Статус</th><th>Экспортер</th><th>Порт</th><th>Версия</th><th>Теги</th><th>Метрики</th></tr></thead>
                                             <tbody>
-                                                ${services.map(svc => {
+                                                ${services.map((svc, si) => {
                                                     const svcChecks = checks.filter(c => c.ServiceName === svc.Service);
                                                     let svcStatus = 'passing';
                                                     if (svcChecks.some(c => c.Status === 'critical')) svcStatus = 'critical';
@@ -639,6 +642,7 @@ async function applyServerFilters() {
                                                             <td><span class="port-badge">:${svc.Port}</span></td>
                                                             <td class="cell-mono">${svc.Meta?.version || '-'}</td>
                                                             <td>${svc.Tags.slice(0, 5).map(t => `<span class="tag ${getTagClass(t)}">${t}</span>`).join(' ')}</td>
+                                                            <td><span id="${rowId}-mc-${si}" class="cell-muted" style="font-size:11px">—</span></td>
                                                         </tr>`;
                                                 }).join('')}
                                             </tbody>
@@ -1788,6 +1792,58 @@ async function runComparison() {
         '<tr><td class="cell-muted">Серверы</td><td class="cmp-cell">' + _collapsibleTags(d1.server_list, 3, 'cmp-srv1') + '</td><td class="cmp-cell">' + _collapsibleTags(d2.server_list, 3, 'cmp-srv2') + '</td></tr>' +
         '<tr><td class="cell-muted">Экспортеры</td><td class="cmp-cell">' + _collapsibleTags(d1.exporters, 4, 'cmp-exp1') + '</td><td class="cmp-cell">' + _collapsibleTags(d2.exporters, 4, 'cmp-exp2') + '</td></tr>' +
         '</tbody></table>';
+}
+
+// ═══════════════════════════════════════
+// ═══════════════════════════════════════
+// Проверка метрик экспортеров
+// ═══════════════════════════════════════
+
+async function checkExporterMetrics(host, port, service, targetEl) {
+    const el = document.getElementById(targetEl);
+    if (!el) return;
+    el.innerHTML = '<span style="color:var(--text-muted)">⏳</span>';
+    try {
+        const res = await fetch('/api/check-metrics', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ host, port, service })
+        });
+        const d = await res.json();
+        if (d.status === 'error') {
+            el.innerHTML = `<span title="${d.reason}" style="color:var(--critical);cursor:help">⚠ ${d.reason === 'timeout' ? 'таймаут' : d.reason === 'connection_refused' ? 'нет связи' : 'ошибка'}</span>`;
+            return;
+        }
+        if (d.expected_prefixes) {
+            if (d.all_expected_found) {
+                el.innerHTML = `<span title="Найдены: ${d.found_prefixes.join(', ')}  (${d.target_metrics} целевых из ${d.total_metrics})" style="color:var(--passing);cursor:help">✔ ${d.target_metrics} целевых</span>`;
+            } else {
+                const missing = d.expected_prefixes.filter(p => !d.found_prefixes.includes(p));
+                el.innerHTML = `<span title="Нет метрик: ${missing.join(', ')}  Найдено: ${d.found_prefixes.join(', ') || 'нет'}" style="color:var(--critical);cursor:help">✘ нет ${missing.join(', ')}</span>`;
+            }
+        } else if (d.has_target_metrics) {
+            el.innerHTML = `<span title="Примеры: ${d.sample_target.slice(0,5).join(', ')}" style="color:var(--passing);cursor:help">✔ ${d.target_metrics} метрик</span>`;
+        } else {
+            el.innerHTML = `<span title="Только self-метрики (process_*, go_*)" style="color:var(--warning);cursor:help">⚠ только self</span>`;
+        }
+    } catch(e) {
+        el.innerHTML = `<span style="color:var(--critical)">ошибка</span>`;
+    }
+}
+
+async function checkAllMetrics(host, rowId) {
+    const tbody = document.querySelector(`#${rowId}-services tbody`);
+    if (!tbody) return;
+    const rows = tbody.querySelectorAll('tr');
+    const promises = [];
+    rows.forEach((row, i) => {
+        const cells = row.querySelectorAll('td');
+        if (cells.length < 6) return;
+        const service = cells[1].textContent.trim();
+        const port = parseInt(cells[2].textContent.replace(/[^0-9]/g, ''), 10);
+        if (!port) return;
+        promises.push(checkExporterMetrics(host, port, service, `${rowId}-mc-${i}`));
+    });
+    await Promise.all(promises);
 }
 
 // ═══════════════════════════════════════

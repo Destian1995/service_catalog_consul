@@ -7,6 +7,8 @@
 import os
 import json
 import logging
+import re
+import requests as http_requests
 from flask import Flask, jsonify, request, send_from_directory, session, redirect
 from flask_cors import CORS
 
@@ -252,6 +254,125 @@ def api_service_detail(service_name):
     if not instances:
         return jsonify({"error": "Service not found"}), 404
     return jsonify(instances)
+
+# ── Exporter metrics validation ──
+EXPORTER_METRIC_PREFIXES = {
+    "node-exporter":          ["node_"],
+    "node_exporter":          ["node_"],
+    "windows-exporter":       ["windows_"],
+    "windows_exporter":       ["windows_"],
+    "postgres-exporter":      ["pg_"],
+    "postgres_exporter":      ["pg_"],
+    "postgresql-exporter":    ["pg_"],
+    "mysqld-exporter":        ["mysql_"],
+    "mysqld_exporter":        ["mysql_"],
+    "mysql-exporter":         ["mysql_"],
+    "redis-exporter":         ["redis_"],
+    "redis_exporter":         ["redis_"],
+    "mongodb-exporter":       ["mongodb_"],
+    "mongodb_exporter":       ["mongodb_"],
+    "blackbox-exporter":      ["probe_"],
+    "blackbox_exporter":      ["probe_"],
+    "kafka-exporter":         ["kafka_"],
+    "kafka_exporter":         ["kafka_"],
+    "rabbitmq-exporter":      ["rabbitmq_"],
+    "rabbitmq_exporter":      ["rabbitmq_"],
+    "elasticsearch-exporter": ["elasticsearch_"],
+    "nginx-exporter":         ["nginx_"],
+    "nginx_exporter":         ["nginx_"],
+    "haproxy-exporter":       ["haproxy_"],
+    "haproxy_exporter":       ["haproxy_"],
+    "consul-exporter":        ["consul_"],
+    "consul_exporter":        ["consul_"],
+    "clickhouse-exporter":    ["chi_", "clickhouse_"],
+    "clickhouse_exporter":    ["chi_", "clickhouse_"],
+    "jmx-exporter":           ["jvm_", "java_"],
+    "jmx_exporter":           ["jvm_", "java_"],
+    "process-exporter":       ["namedprocess_"],
+    "process_exporter":       ["namedprocess_"],
+    "oracledb-exporter":      ["oracledb_"],
+    "oracledb_exporter":      ["oracledb_"],
+    "mssql-exporter":         ["mssql_"],
+    "mssql_exporter":         ["mssql_"],
+    "ssl-exporter":           ["ssl_"],
+    "ssl_exporter":           ["ssl_"],
+    "ipmi-exporter":          ["ipmi_"],
+    "ipmi_exporter":          ["ipmi_"],
+}
+
+# Self-metrics that every Prometheus exporter emits (not target-specific)
+SELF_METRIC_PREFIXES = ["process_", "go_", "promhttp_"]
+
+def _find_expected_prefixes(service_name):
+    """Find expected metric prefixes for a service name."""
+    sn = service_name.lower().strip()
+    if sn in EXPORTER_METRIC_PREFIXES:
+        return EXPORTER_METRIC_PREFIXES[sn]
+    # Fuzzy: check if any key is a substring
+    for key, prefixes in EXPORTER_METRIC_PREFIXES.items():
+        if key in sn or sn in key:
+            return prefixes
+    return None
+
+@app.route("/api/check-metrics", methods=["POST"])
+def api_check_metrics():
+    """Check if an exporter endpoint returns expected target metrics."""
+    data = request.json
+    host = data.get("host", "")
+    port = data.get("port", 0)
+    service = data.get("service", "")
+
+    if not host or not port:
+        return jsonify({"error": "host and port required"}), 400
+
+    expected = _find_expected_prefixes(service)
+    url = f"http://{host}:{port}/metrics"
+
+    try:
+        resp = http_requests.get(url, timeout=5)
+        resp.raise_for_status()
+        body = resp.text
+    except http_requests.exceptions.ConnectTimeout:
+        return jsonify({"status": "error", "reason": "timeout", "url": url})
+    except http_requests.exceptions.ConnectionError:
+        return jsonify({"status": "error", "reason": "connection_refused", "url": url})
+    except Exception as e:
+        return jsonify({"status": "error", "reason": str(e), "url": url})
+
+    # Parse metric names (lines not starting with #)
+    metric_names = set()
+    for line in body.split("\n"):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        name = line.split("{")[0].split(" ")[0]
+        if name:
+            metric_names.add(name)
+
+    total = len(metric_names)
+    # Filter out self-metrics
+    self_only = {m for m in metric_names
+                 if any(m.startswith(p) for p in SELF_METRIC_PREFIXES)}
+    target_metrics = metric_names - self_only
+
+    result = {
+        "status": "ok",
+        "url": url,
+        "total_metrics": total,
+        "self_metrics": len(self_only),
+        "target_metrics": len(target_metrics),
+        "has_target_metrics": len(target_metrics) > 0,
+        "sample_target": sorted(target_metrics)[:10],
+    }
+
+    if expected:
+        found = [p for p in expected
+                 if any(m.startswith(p) for m in metric_names)]
+        result["expected_prefixes"] = expected
+        result["found_prefixes"] = found
+        result["all_expected_found"] = len(found) == len(expected)
+
+    return jsonify(result)
 
 @app.route("/api/health/summary")
 def api_health_summary():
