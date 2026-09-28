@@ -596,6 +596,9 @@ async function applyServerFilters() {
                                     </div>
 
                                     <div class="expand-panel active" id="${rowId}-overview">
+                                        <div style="margin-bottom:12px;text-align:right">
+                                            <button class="btn-export" style="background:var(--critical);color:#fff;border:none" onclick="event.stopPropagation(); deregisterNode('${node.Node}')">Дерегистрация</button>
+                                        </div>
                                         <div class="info-grid">
                                             <div class="info-card">
                                                 <div class="info-card-title">Система</div>
@@ -707,6 +710,22 @@ function resetServerFilters() {
         if (el) el.value = '';
     });
     applyServerFilters();
+}
+
+async function deregisterNode(nodeName) {
+    if (!confirm(`Дерегистрировать узел «${nodeName}» из Consul? Это действие необратимо.`)) return;
+    try {
+        const resp = await fetch(`/api/nodes/${encodeURIComponent(nodeName)}/deregister`, {method: 'POST'});
+        const data = await resp.json();
+        if (data.ok) {
+            alert(`Узел «${nodeName}» успешно дерегистрирован`);
+            renderServers();
+        } else {
+            alert(`Ошибка: ${data.error || 'не удалось дерегистрировать узел'}`);
+        }
+    } catch (e) {
+        alert(`Ошибка сети: ${e.message}`);
+    }
 }
 
 // ═══════════════════════════════════════

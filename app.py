@@ -243,6 +243,17 @@ def api_node_detail(node_name):
         return jsonify({"error": "Node not found"}), 404
     return jsonify(data)
 
+@app.route("/api/nodes/<node_name>/deregister", methods=["POST"])
+def api_node_deregister(node_name):
+    if get_mode() == "test":
+        return jsonify({"ok": True})
+    from consul_client import ConsulAggregator
+    agg = ConsulAggregator(load_config())
+    ok = agg.deregister_node(node_name)
+    if ok:
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "Node not found or deregister failed"}), 400
+
 @app.route("/api/services")
 def api_services():
     filters = {k: request.args.get(k) for k in ["dc", "tag", "search"] if request.args.get(k)}

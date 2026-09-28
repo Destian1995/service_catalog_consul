@@ -112,6 +112,11 @@ class ConsulClient:
         }
         return self._put("/catalog/register", payload)
 
+    def deregister_node(self, node_name, datacenter):
+        """Deregister a node via PUT /v1/catalog/deregister."""
+        payload = {"Node": node_name, "Datacenter": datacenter}
+        return self._put("/catalog/deregister", payload)
+
     def get_nodes(self):
         raw = self._get("/catalog/nodes")
         if not raw:
@@ -238,6 +243,18 @@ class ConsulAggregator:
                     node["ID"], node["Node"], node["Address"],
                     node["Datacenter"], raw_meta
                 )
+        return False
+
+    def deregister_node(self, node_name):
+        """Find node across DCs and deregister it from Consul catalog."""
+        for client in self.clients:
+            nodes = client.get_nodes()
+            node = next((n for n in nodes if n["Node"] == node_name), None)
+            if node:
+                ok = client.deregister_node(node["Node"], node["Datacenter"])
+                if ok:
+                    _cache.clear()
+                return ok
         return False
 
     def get_node_detail(self, node_name):
