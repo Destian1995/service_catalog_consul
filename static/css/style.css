@@ -232,6 +232,8 @@ body {
 .status-passing { background: var(--passing); box-shadow: 0 0 8px var(--passing); }
 .status-warning { background: var(--warning); box-shadow: 0 0 8px var(--warning); }
 .status-critical { background: var(--critical); box-shadow: 0 0 8px var(--critical); }
+.status-unknown { background: #555; box-shadow: none; animation: pulse-unknown 1.2s infinite; }
+@keyframes pulse-unknown { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
 
 /* ═══════════════════════════════════════
    Main content

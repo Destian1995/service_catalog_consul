@@ -560,17 +560,13 @@ async function applyServerFilters() {
                     // Consul-agent health (serfHealth = node reachability)
                     const serfCheck = checks.find(c => c.CheckID === 'serfHealth');
                     const agentDown = serfCheck?.Status === 'critical';
-                    // Service-level checks (exporters)
+                    // Overall status: only based on agent reachability
+                    // Exporter status is checked via real metrics probe on row expand
+                    let overallStatus = agentDown ? 'critical' : 'passing';
                     const svcChecks = checks.filter(c => c.CheckID !== 'serfHealth');
-                    const svcCrit = svcChecks.filter(c => c.Status === 'critical').length;
-                    const svcWarn = svcChecks.filter(c => c.Status === 'warning').length;
-                    // Red: consul-agent unreachable (все включая агент лежат)
-                    // Yellow: агент живой, но есть проблемные экспортеры
-                    // Green: всё штатно
-                    let overallStatus = 'passing';
-                    if (agentDown) overallStatus = 'critical';
-                    else if (svcCrit > 0 || svcWarn > 0) overallStatus = 'warning';
-                    const critCount = svcCrit; const warnCount = svcWarn; const passCount = svcChecks.filter(c => c.Status === 'passing').length;
+                    const critCount = svcChecks.filter(c => c.Status === 'critical').length;
+                    const warnCount = svcChecks.filter(c => c.Status === 'warning').length;
+                    const passCount = svcChecks.filter(c => c.Status === 'passing').length;
                     const rowId = `server-row-${i}`;
 
                     return `
@@ -585,7 +581,7 @@ async function applyServerFilters() {
                             <td class="cell-muted">${node.Meta.os}</td>
                             <td class="cell-mono">${services.length}</td>
                         </tr>
-                        <tr class="expand-content" id="${rowId}">
+                        <tr class="expand-content" id="${rowId}" data-host="${node.Address}" data-exporters='${JSON.stringify(services.map((s,si) => ({name:s.Service, port:s.Port, idx:si}))).replace(/'/g, "&#39;")}'>
                             <td colspan="9">
                                 <div class="expand-body">
                                     <div class="expand-tabs">
@@ -650,12 +646,8 @@ async function applyServerFilters() {
                                             <thead><tr><th>Статус</th><th>Экспортер</th><th>Порт</th><th>Версия</th><th>Теги</th><th>Метрики</th></tr></thead>
                                             <tbody>
                                                 ${services.map((svc, si) => {
-                                                    const svcChecks = checks.filter(c => c.ServiceName === svc.Service);
-                                                    let svcStatus = 'passing';
-                                                    if (svcChecks.some(c => c.Status === 'critical')) svcStatus = 'critical';
-                                                    else if (svcChecks.some(c => c.Status === 'warning')) svcStatus = 'warning';
                                                     return `<tr>
-                                                            <td><span class="status-dot status-${svcStatus}"></span></td>
+                                                            <td><span id="${rowId}-svc-status-${si}" class="status-dot status-unknown" title="Проверка..."></span></td>
                                                             <td class="cell-name">${svc.Service}</td>
                                                             <td><span class="port-badge">:${svc.Port}</span></td>
                                                             <td class="cell-mono">${svc.Meta?.version || '-'}</td>
@@ -710,6 +702,39 @@ function resetServerFilters() {
         if (el) el.value = '';
     });
     applyServerFilters();
+}
+
+async function checkExportersAlive(rowId) {
+    const row = document.getElementById(rowId);
+    if (!row) return;
+    const host = row.dataset.host;
+    const exporters = JSON.parse(row.dataset.exporters || '[]');
+    if (!host || !exporters.length) return;
+    checkExportersAliveFor(rowId, host, exporters, 'svc-status');
+}
+
+async function checkExportersAliveFor(rowId, host, exporters, prefix) {
+    try {
+        const resp = await fetch('/api/check-exporters-alive', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ host, exporters: exporters.map(e => ({name: e.name, port: e.port})) })
+        });
+        const results = await resp.json();
+        for (const r of results) {
+            const exp = exporters.find(e => e.name === r.name && e.port === r.port);
+            if (!exp) continue;
+            const dot = document.getElementById(`${rowId}-${prefix}-${exp.idx}`);
+            if (dot) {
+                dot.className = `status-dot status-${r.alive ? 'passing' : 'critical'}`;
+                dot.title = r.alive ? 'Метрики доступны' : 'Метрики недоступны';
+            }
+        }
+    } catch(e) {
+        for (const exp of exporters) {
+            const dot = document.getElementById(`${rowId}-${prefix}-${exp.idx}`);
+            if (dot) { dot.className = 'status-dot status-critical'; dot.title = 'Ошибка проверки'; }
+        }
+    }
 }
 
 async function deregisterNode(nodeName) {
@@ -2277,7 +2302,14 @@ function toggleRow(rowId, triggerRow) {
     const isOpen = expandRow.classList.contains('open');
     const table = triggerRow.closest('table');
     table.querySelectorAll('.expand-content.open').forEach(r => { r.classList.remove('open'); r.previousElementSibling?.classList.remove('expanded'); });
-    if (!isOpen) { expandRow.classList.add('open'); triggerRow.classList.add('expanded'); }
+    if (!isOpen) {
+        expandRow.classList.add('open'); triggerRow.classList.add('expanded');
+        // Auto-check exporter liveness if not checked yet
+        if (!expandRow.dataset.aliveChecked) {
+            expandRow.dataset.aliveChecked = '1';
+            checkExportersAlive(rowId);
+        }
+    }
 }
 
 async function toggleHostRow(rowId, triggerRow, nodeName) {
@@ -2334,12 +2366,8 @@ async function toggleHostRow(rowId, triggerRow, nodeName) {
                 ${services.length === 0 ? '<div class="empty-state"><p>Нет экспортеров</p></div>' :
                 `<table class="data-table nested-table">
                     <thead><tr><th>Статус</th><th>Экспортер</th><th>Порт</th><th>Версия</th><th>Теги</th></tr></thead>
-                    <tbody>${services.map(svc => {
-                        const svcChecks = checks.filter(c => c.ServiceName === svc.Service);
-                        let svcStatus = 'passing';
-                        if (svcChecks.some(c => c.Status === 'critical')) svcStatus = 'critical';
-                        else if (svcChecks.some(c => c.Status === 'warning')) svcStatus = 'warning';
-                        return `<tr><td><span class="status-dot status-${svcStatus}"></span></td><td class="cell-name">${svc.Service}</td><td><span class="port-badge">:${svc.Port}</span></td><td class="cell-mono">${svc.Meta?.version || '-'}</td><td>${svc.Tags.slice(0, 5).map(t => `<span class="tag ${getTagClass(t)}">${t}</span>`).join(' ')}</td></tr>`;
+                    <tbody>${services.map((svc, si) => {
+                        return `<tr><td><span id="${rowId}-hsvc-status-${si}" class="status-dot status-unknown" title="Проверка..."></span></td><td class="cell-name">${svc.Service}</td><td><span class="port-badge">:${svc.Port}</span></td><td class="cell-mono">${svc.Meta?.version || '-'}</td><td>${svc.Tags.slice(0, 5).map(t => `<span class="tag ${getTagClass(t)}">${t}</span>`).join(' ')}</td></tr>`;
                     }).join('')}</tbody>
                 </table>`}
             </div>
@@ -2360,6 +2388,10 @@ async function toggleHostRow(rowId, triggerRow, nodeName) {
                     </div>
                 </div>
             </div>`;
+        // Auto-check exporter liveness
+        if (services.length > 0) {
+            checkExportersAliveFor(rowId, node.Address, services.map((s,si) => ({name:s.Service, port:s.Port, idx:si})), 'hsvc-status');
+        }
     }
 }
 

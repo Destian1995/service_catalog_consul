@@ -325,6 +325,35 @@ def _find_expected_prefixes(service_name):
             return prefixes
     return None
 
+@app.route("/api/check-exporters-alive", methods=["POST"])
+def api_check_exporters_alive():
+    """Batch check: does each exporter serve metrics at host:port/metrics?"""
+    data = request.json or {}
+    host = data.get("host", "")
+    exporters = data.get("exporters", [])  # [{name, port}, ...]
+    if not host or not exporters:
+        return jsonify({"error": "host and exporters required"}), 400
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def _probe(exp):
+        port = exp.get("port", 0)
+        name = exp.get("name", "")
+        url = f"http://{host}:{port}/metrics"
+        try:
+            r = http_requests.get(url, timeout=3)
+            alive = r.status_code == 200 and len(r.text) > 0
+            return {"name": name, "port": port, "alive": alive}
+        except Exception:
+            return {"name": name, "port": port, "alive": False}
+
+    results = []
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        futures = {pool.submit(_probe, e): e for e in exporters}
+        for f in as_completed(futures):
+            results.append(f.result())
+    return jsonify(results)
+
 @app.route("/api/check-metrics", methods=["POST"])
 def api_check_metrics():
     """Check if an exporter endpoint returns expected target metrics."""
