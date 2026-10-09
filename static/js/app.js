@@ -2002,17 +2002,17 @@ async function renderOwnersMgmt() {
                     <td colspan="5">
                         <div class="expand-body" style="padding:12px 16px">
                             ${servers.length === 0 ? '<div style="color:var(--text-muted);font-size:13px">Нет привязанных серверов</div>' :
-                            Object.keys(bySystem).sort().map(sys => `
-                                <div style="margin-bottom:12px">
-                                    <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:6px">
-                                        <span class="badge badge-system">${sys}</span>
-                                        <span style="color:var(--text-muted);font-weight:400;margin-left:6px">${bySystem[sys].length} серв.</span>
-                                    </div>
-                                    <div style="display:flex;flex-wrap:wrap;gap:4px;padding-left:8px">
-                                        ${bySystem[sys].sort().map(s => `<span class="badge badge-dc" style="cursor:pointer;margin:2px" title="Убрать" onclick="event.stopPropagation(); ownerRemoveServer('${owner}', '${s}')">${s} &times;</span>`).join('')}
-                                    </div>
-                                </div>
-                            `).join('')}
+                            `<table class="data-table nested-table">
+                                <thead><tr><th style="width:200px">ИС</th><th>Серверы</th></tr></thead>
+                                <tbody>
+                                    ${Object.keys(bySystem).sort().map(sys => `
+                                        <tr>
+                                            <td><span class="badge badge-system">${sys}</span></td>
+                                            <td>${bySystem[sys].sort().map(s => `<span class="badge badge-dc" style="cursor:pointer;margin:2px" title="Убрать" onclick="event.stopPropagation(); ownerRemoveServer('${owner}', '${s}')">${s} &times;</span>`).join(' ')}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>`}
                         </div>
                     </td>
                 </tr>`;
