@@ -2005,12 +2005,24 @@ async function renderOwnersMgmt() {
                             `<table class="data-table nested-table">
                                 <thead><tr><th style="width:200px">ИС</th><th>Серверы</th></tr></thead>
                                 <tbody>
-                                    ${Object.keys(bySystem).sort().map(sys => `
-                                        <tr>
-                                            <td><span class="badge badge-system">${sys}</span></td>
-                                            <td>${bySystem[sys].sort().map(s => `<span class="badge badge-dc" style="cursor:pointer;margin:2px" title="Убрать" onclick="event.stopPropagation(); ownerRemoveServer('${owner}', '${s}')">${s} &times;</span>`).join(' ')}</td>
-                                        </tr>
-                                    `).join('')}
+                                    ${Object.keys(bySystem).sort().map((sys, si) => {
+                                        const sorted = bySystem[sys].sort();
+                                        const limit = 3;
+                                        const hasMore = sorted.length > limit;
+                                        const listId = `${ownerRowId}-sys-${si}`;
+                                        return `<tr>
+                                            <td style="vertical-align:top"><span class="badge badge-system">${sys}</span><br><span style="color:var(--text-muted);font-size:11px">${sorted.length} серв.</span></td>
+                                            <td>
+                                                <div style="display:flex;flex-direction:column;gap:2px">
+                                                    ${sorted.slice(0, limit).map(s => `<div><span class="badge badge-dc" style="cursor:pointer;margin:1px 0" title="Убрать" onclick="event.stopPropagation(); ownerRemoveServer('${owner}', '${s}')">${s} &times;</span></div>`).join('')}
+                                                    ${hasMore ? `<div id="${listId}-extra" style="display:none;flex-direction:column;gap:2px">
+                                                        ${sorted.slice(limit).map(s => `<div><span class="badge badge-dc" style="cursor:pointer;margin:1px 0" title="Убрать" onclick="event.stopPropagation(); ownerRemoveServer('${owner}', '${s}')">${s} &times;</span></div>`).join('')}
+                                                    </div>
+                                                    <button class="btn-export" style="padding:2px 10px;font-size:11px;margin-top:2px;width:fit-content" onclick="event.stopPropagation(); toggleOwnerServers('${listId}', this)">ещё ${sorted.length - limit} ▼</button>` : ''}
+                                                </div>
+                                            </td>
+                                        </tr>`;
+                                    }).join('')}
                                 </tbody>
                             </table>`}
                         </div>
@@ -2037,6 +2049,15 @@ async function renderOwnersMgmt() {
     window._ownersRender = renderContent;
     window._ownersAllServers = allServers;
     renderContent();
+}
+
+function toggleOwnerServers(listId, btn) {
+    const extra = document.getElementById(listId + '-extra');
+    if (!extra) return;
+    if (!btn.dataset.label) btn.dataset.label = btn.textContent;
+    const hidden = extra.style.display === 'none';
+    extra.style.display = hidden ? 'flex' : 'none';
+    btn.textContent = hidden ? 'свернуть ▲' : btn.dataset.label;
 }
 
 function toggleOwnerRow(rowId, triggerRow) {
