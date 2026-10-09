@@ -1928,6 +1928,9 @@ async function renderOwnersMgmt() {
     _ownerData = assignments || {};
 
     const allServers = nodes.map(n => n.Node).sort();
+    // Build node→system_name map
+    const _nodeSystem = {};
+    nodes.forEach(n => { _nodeSystem[n.Node] = n.Meta?.system_name || '-'; });
 
     function assignedServers() {
         const s = new Set();
@@ -1957,32 +1960,61 @@ async function renderOwnersMgmt() {
             html += `<div class="empty-state"><p>Нет владельцев. Нажмите «+ Владелец» чтобы добавить.</p></div>`;
         } else {
             html += `<div class="table-wrapper"><table class="data-table"><thead><tr>
+                <th style="width:30px"></th>
                 <th style="width:22%">Владелец</th>
-                <th>Серверы</th>
+                <th>ИС / Серверы</th>
                 <th style="width:320px">Добавить сервер</th>
                 <th style="width:90px"></th>
             </tr></thead><tbody>`;
 
-            owners.forEach(owner => {
+            owners.forEach((owner, oi) => {
                 const servers = _ownerData[owner] || [];
-                const serverBadges = servers.length === 0
+                // Group servers by system_name
+                const bySystem = {};
+                servers.forEach(s => {
+                    const sys = _nodeSystem[s] || '-';
+                    if (!bySystem[sys]) bySystem[sys] = [];
+                    bySystem[sys].push(s);
+                });
+                const systemCount = Object.keys(bySystem).length;
+                const summaryText = servers.length === 0
                     ? '<span style="color:var(--text-muted);font-size:12px">нет серверов</span>'
-                    : servers.map(s => `<span class="badge badge-dc" style="cursor:pointer;margin:2px" title="Убрать" onclick="ownerRemoveServer('${owner}', '${s}')">${s} &times;</span>`).join(' ');
+                    : `<span style="font-size:12px;color:var(--text-muted)">${systemCount} ИС, ${servers.length} серверов</span>`;
 
                 const freeOpts = freeServers.map(s => `<option value="${s}">${s}</option>`).join('');
-                html += `<tr>
+                const ownerRowId = `owner-row-${oi}`;
+                html += `<tr class="expandable-row" onclick="toggleOwnerRow('${ownerRowId}', this)" style="cursor:pointer">
+                    <td>${chevronIcon()}</td>
                     <td class="cell-name">${owner}</td>
-                    <td>${serverBadges}</td>
-                    <td>
+                    <td>${summaryText}</td>
+                    <td onclick="event.stopPropagation()">
                         <div style="display:flex;gap:6px">
-                            <select id="ownerSel-${owner.replace(/\s/g, '_')}" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);font-size:13px">
+                            <select id="ownerSel-${owner.replace(/\s/g, '_')}" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);font-size:13px" onclick="event.stopPropagation()">
                                 <option value="">— выберите —</option>
                                 ${freeOpts}
                             </select>
-                            <button class="btn-export" style="padding:6px 14px;font-size:13px" onclick="ownerAssignServer('${owner}')">Добавить</button>
+                            <button class="btn-export" style="padding:6px 14px;font-size:13px" onclick="event.stopPropagation(); ownerAssignServer('${owner}')">Добавить</button>
                         </div>
                     </td>
-                    <td><button class="btn-export" style="padding:6px 14px;font-size:13px;color:var(--critical);border-color:var(--critical)" onclick="ownerDelete('${owner}')" title="Удалить владельца">Удалить</button></td>
+                    <td onclick="event.stopPropagation()"><button class="btn-export" style="padding:6px 14px;font-size:13px;color:var(--critical);border-color:var(--critical)" onclick="event.stopPropagation(); ownerDelete('${owner}')" title="Удалить владельца">Удалить</button></td>
+                </tr>
+                <tr class="expand-content" id="${ownerRowId}">
+                    <td colspan="5">
+                        <div class="expand-body" style="padding:12px 16px">
+                            ${servers.length === 0 ? '<div style="color:var(--text-muted);font-size:13px">Нет привязанных серверов</div>' :
+                            Object.keys(bySystem).sort().map(sys => `
+                                <div style="margin-bottom:12px">
+                                    <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:6px">
+                                        <span class="badge badge-system">${sys}</span>
+                                        <span style="color:var(--text-muted);font-weight:400;margin-left:6px">${bySystem[sys].length} серв.</span>
+                                    </div>
+                                    <div style="display:flex;flex-wrap:wrap;gap:4px;padding-left:8px">
+                                        ${bySystem[sys].sort().map(s => `<span class="badge badge-dc" style="cursor:pointer;margin:2px" title="Убрать" onclick="event.stopPropagation(); ownerRemoveServer('${owner}', '${s}')">${s} &times;</span>`).join('')}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </td>
                 </tr>`;
             });
             html += `</tbody></table></div>`;
@@ -2005,6 +2037,15 @@ async function renderOwnersMgmt() {
     window._ownersRender = renderContent;
     window._ownersAllServers = allServers;
     renderContent();
+}
+
+function toggleOwnerRow(rowId, triggerRow) {
+    const expandRow = document.getElementById(rowId);
+    if (!expandRow) return;
+    const isOpen = expandRow.classList.contains('open');
+    const table = triggerRow.closest('table');
+    table.querySelectorAll('.expand-content.open').forEach(r => { r.classList.remove('open'); r.previousElementSibling?.classList.remove('expanded'); });
+    if (!isOpen) { expandRow.classList.add('open'); triggerRow.classList.add('expanded'); }
 }
 
 function ownerAdd() {
