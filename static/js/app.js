@@ -2011,15 +2011,15 @@ async function renderOwnersMgmt() {
                                         const hasMore = sorted.length > limit;
                                         const listId = `${ownerRowId}-sys-${si}`;
                                         return `<tr>
-                                            <td style="vertical-align:top"><span class="badge badge-system">${sys}</span><br><span style="color:var(--text-muted);font-size:11px">${sorted.length} серв.</span></td>
-                                            <td>
-                                                <div style="display:flex;flex-direction:column;gap:2px">
-                                                    ${sorted.slice(0, limit).map(s => `<div><span class="badge badge-dc" style="cursor:pointer;margin:1px 0" title="Убрать" onclick="event.stopPropagation(); ownerRemoveServer('${owner}', '${s}')">${s} &times;</span></div>`).join('')}
-                                                    ${hasMore ? `<div id="${listId}-extra" style="display:none;flex-direction:column;gap:2px">
-                                                        ${sorted.slice(limit).map(s => `<div><span class="badge badge-dc" style="cursor:pointer;margin:1px 0" title="Убрать" onclick="event.stopPropagation(); ownerRemoveServer('${owner}', '${s}')">${s} &times;</span></div>`).join('')}
-                                                    </div>
-                                                    <button class="btn-export" style="padding:2px 10px;font-size:11px;margin-top:2px;width:fit-content" onclick="event.stopPropagation(); toggleOwnerServers('${listId}', this)">ещё ${sorted.length - limit} ▼</button>` : ''}
+                                            <td style="vertical-align:top;padding:10px 12px"><span class="badge badge-system">${sys}</span><br><span style="color:var(--text-muted);font-size:11px">${sorted.length} серв.</span></td>
+                                            <td style="padding:10px 12px">
+                                                <div style="display:flex;flex-wrap:wrap;gap:6px 10px">
+                                                    ${sorted.slice(0, limit).map(s => `<span class="badge badge-dc" style="cursor:pointer;padding:5px 10px" title="Убрать" onclick="event.stopPropagation(); ownerRemoveServer('${owner}', '${s}')">${s} &times;</span>`).join('')}
                                                 </div>
+                                                ${hasMore ? `<div id="${listId}-extra" style="display:none;flex-wrap:wrap;gap:6px 10px;margin-top:8px">
+                                                    ${sorted.slice(limit).map(s => `<span class="badge badge-dc" style="cursor:pointer;padding:5px 10px" title="Убрать" onclick="event.stopPropagation(); ownerRemoveServer('${owner}', '${s}')">${s} &times;</span>`).join('')}
+                                                </div>
+                                                <button class="btn-export" style="padding:3px 12px;font-size:11px;margin-top:8px;width:fit-content" onclick="event.stopPropagation(); toggleOwnerServers('${listId}', this)">ещё ${sorted.length - limit} ▼</button>` : ''}
                                             </td>
                                         </tr>`;
                                     }).join('')}
