@@ -487,6 +487,14 @@ async function renderServers() {
                     ${owners.map(o => `<option value="${o}">${o}</option>`).join('')}
                 </select>
             </div>
+            <div class="filter-group">
+                <span class="filter-label">Статус</span>
+                <select class="filter-select" id="filterStatus" onchange="applyServerFilters()">
+                    <option value="">Все</option>
+                    <option value="passing">Норма</option>
+                    <option value="critical">Критичный</option>
+                </select>
+            </div>
             <input class="filter-search" id="filterServerSearch" placeholder="Поиск серверов..."
                    value="${globalSearch}" oninput="applyServerFilters()">
             <button class="btn-reset" onclick="resetServerFilters()">Сбросить</button>
@@ -528,14 +536,35 @@ async function applyServerFilters() {
 
     const nodes = await api(url);
     const countEl = document.getElementById('serversCount');
-    if (countEl) countEl.textContent = nodes.length;
 
     if (nodes.length === 0) {
+        if (countEl) countEl.textContent = 0;
         container.innerHTML = `<div class="empty-state"><p>Серверы не найдены</p></div>`;
         return;
     }
 
     const allDetails = await Promise.all(nodes.map(n => api(`/api/nodes/${n.Node}`)));
+
+    const statusFilter = document.getElementById('filterStatus')?.value || '';
+
+    // Build filtered list of {node, detail} pairs based on status
+    let filtered = allDetails.map((detail, i) => {
+        const checks = detail.checks || [];
+        const serfCheck = checks.find(c => c.CheckID === 'serfHealth');
+        const agentDown = serfCheck?.Status === 'critical';
+        const status = agentDown ? 'critical' : 'passing';
+        return { node: nodes[i], detail, status };
+    });
+    if (statusFilter) {
+        filtered = filtered.filter(item => item.status === statusFilter);
+    }
+
+    if (countEl) countEl.textContent = filtered.length;
+
+    if (filtered.length === 0) {
+        container.innerHTML = `<div class="empty-state"><p>Серверы не найдены</p></div>`;
+        return;
+    }
 
     container.innerHTML = `
         <table class="data-table">
@@ -553,16 +582,12 @@ async function applyServerFilters() {
                 </tr>
             </thead>
             <tbody>
-                ${allDetails.map((detail, i) => {
-                    const node = nodes[i];
+                ${filtered.map((item, i) => {
+                    const node = item.node;
+                    const detail = item.detail;
                     const services = detail.services || [];
                     const checks = detail.checks || [];
-                    // Consul-agent health (serfHealth = node reachability)
-                    const serfCheck = checks.find(c => c.CheckID === 'serfHealth');
-                    const agentDown = serfCheck?.Status === 'critical';
-                    // Overall status: only based on agent reachability
-                    // Exporter status is checked via real metrics probe on row expand
-                    let overallStatus = agentDown ? 'critical' : 'passing';
+                    const overallStatus = item.status;
                     const svcChecks = checks.filter(c => c.CheckID !== 'serfHealth');
                     const critCount = svcChecks.filter(c => c.Status === 'critical').length;
                     const warnCount = svcChecks.filter(c => c.Status === 'warning').length;
@@ -697,7 +722,7 @@ async function applyServerFilters() {
 }
 
 function resetServerFilters() {
-    ['filterSystem', 'filterDc', 'filterEnv', 'filterOwner', 'filterServerSearch'].forEach(id => {
+    ['filterSystem', 'filterDc', 'filterEnv', 'filterOwner', 'filterStatus', 'filterServerSearch'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
     });
