@@ -1111,6 +1111,114 @@ def api_export_inventory():
     return Response(content, mimetype="text/plain",
                     headers={"Content-Disposition": "attachment; filename=inventory.ini"})
 
+
+@app.route("/api/export/custom-inventory")
+def api_export_custom_inventory():
+    """Generate Ansible inventory.ini filtered by OS type, system_name, system_service_type."""
+    from flask import Response
+    nodes = get_nodes()
+
+    os_type = request.args.get("os_type", "").strip().lower()
+    system_name = request.args.getlist("system_name")
+    system_service_type = request.args.getlist("system_service_type")
+
+    # Determine OS per node: port 9100 → linux, port 9182 → windows, else Meta.os
+    result_nodes = []
+    for n in nodes:
+        detail = get_node_detail(n["Node"])
+        svcs = detail.get("services", []) if detail else []
+        ports = {s["Port"] for s in svcs}
+
+        if 9100 in ports:
+            node_os = "linux"
+        elif 9182 in ports:
+            node_os = "windows"
+        else:
+            raw_os = (n["Meta"].get("os") or "").strip().lower()
+            node_os = "windows" if raw_os in ("windows", "win", "win32", "win64") else "linux"
+
+        # Apply filters
+        if os_type and node_os != os_type:
+            continue
+        if system_name:
+            node_sys = (n["Meta"].get("system_name") or "").strip()
+            if node_sys not in system_name:
+                continue
+        if system_service_type:
+            node_sst = (n["Meta"].get("system_service_type") or "").strip()
+            if node_sst not in system_service_type:
+                continue
+
+        result_nodes.append({"node": n, "os": node_os})
+
+    # Group by system_name → os
+    groups = {}
+    for item in result_nodes:
+        n = item["node"]
+        sys_name = (n["Meta"].get("system_name") or "unassigned").strip() or "unassigned"
+        group_name = f"{sys_name}_{item['os']}"
+        groups.setdefault(group_name, []).append(n["Node"])
+
+    for g in groups:
+        groups[g].sort()
+
+    lines = [
+        f"# Custom Ansible inventory",
+        f"# Filters: os_type={os_type or 'all'}, system_name={','.join(system_name) or 'all'}, "
+        f"system_service_type={','.join(system_service_type) or 'all'}",
+        f"# Total: {len(result_nodes)} servers",
+        "",
+    ]
+
+    linux_children = []
+    windows_children = []
+
+    for group_name in sorted(groups.keys()):
+        lines.append(f"[{group_name}]")
+        for host in groups[group_name]:
+            lines.append(host)
+        lines.append("")
+        if group_name.endswith("_linux"):
+            linux_children.append(group_name)
+        elif group_name.endswith("_windows"):
+            windows_children.append(group_name)
+
+    if linux_children:
+        lines.append("[linux:children]")
+        for g in sorted(linux_children):
+            lines.append(g)
+        lines.append("")
+
+    if windows_children:
+        lines.append("[windows:children]")
+        for g in sorted(windows_children):
+            lines.append(g)
+        lines.append("")
+
+    content = "\n".join(lines)
+    return Response(content, mimetype="text/plain",
+                    headers={"Content-Disposition": "attachment; filename=custom_inventory.ini"})
+
+
+@app.route("/api/inventory-filters")
+def api_inventory_filters():
+    """Return available filter values for custom inventory builder."""
+    nodes = get_nodes()
+    system_names = set()
+    service_types = set()
+    for n in nodes:
+        sn = (n["Meta"].get("system_name") or "").strip()
+        if sn and sn != "-":
+            system_names.add(sn)
+        st = (n["Meta"].get("system_service_type") or "").strip()
+        if st and st != "-":
+            service_types.add(st)
+    return jsonify({
+        "system_names": sorted(system_names),
+        "service_types": sorted(service_types),
+    })
+
+
 # ──────────────────────────────────────
 # Advanced analytics APIs
 # ──────────────────────────────────────

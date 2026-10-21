@@ -1704,12 +1704,13 @@ async function renderInventory() {
     const el = $('#view-inventory');
     el.innerHTML = LOADER;
 
-    const [owners, sla, heatmap, history, systems] = await Promise.all([
+    const [owners, sla, heatmap, history, systems, invFilters] = await Promise.all([
         api('/api/owners'),
         api('/api/sla'),
         api('/api/heatmap'),
         api('/api/history'),
         api('/api/systems'),
+        api('/api/inventory-filters'),
     ]);
 
     // SLA table with expandable problem details
@@ -1791,6 +1792,39 @@ async function renderInventory() {
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 Ansible inventory.ini
             </a>
+        </div>
+
+        <!-- Custom inventory builder -->
+        <div class="section-title">Конструктор инвентаря</div>
+        <div class="admin-section" style="margin-bottom:24px">
+            <div class="filter-bar" style="margin-bottom:12px">
+                <div class="filter-group">
+                    <span class="filter-label">Тип ОС</span>
+                    <select class="filter-select" id="invOsType">
+                        <option value="">Все</option>
+                        <option value="linux">Linux</option>
+                        <option value="windows">Windows</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <span class="filter-label">ИС</span>
+                    <select class="filter-select" id="invSystemName" multiple style="min-height:36px">
+                        ${(invFilters.system_names || []).map(s => '<option value="' + s + '">' + s + '</option>').join('')}
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <span class="filter-label">Тип сервиса</span>
+                    <select class="filter-select" id="invServiceType" multiple style="min-height:36px">
+                        ${(invFilters.service_types || []).map(s => '<option value="' + s + '">' + s + '</option>').join('')}
+                    </select>
+                </div>
+                <button class="btn-export" onclick="generateCustomInventory()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Сгенерировать
+                </button>
+                <button class="btn-reset" onclick="previewCustomInventory()">Предпросмотр</button>
+            </div>
+            <div id="inventoryPreview"></div>
         </div>
 
         <!-- SLA -->
@@ -1876,6 +1910,59 @@ async function runComparison() {
         '<tr><td class="cell-muted">Серверы</td><td class="cmp-cell">' + _collapsibleTags(d1.server_list, 3, 'cmp-srv1') + '</td><td class="cmp-cell">' + _collapsibleTags(d2.server_list, 3, 'cmp-srv2') + '</td></tr>' +
         '<tr><td class="cell-muted">Экспортеры</td><td class="cmp-cell">' + _collapsibleTags(d1.exporters, 4, 'cmp-exp1') + '</td><td class="cmp-cell">' + _collapsibleTags(d2.exporters, 4, 'cmp-exp2') + '</td></tr>' +
         '</tbody></table>';
+}
+
+// ═══════════════════════════════════════
+// Custom inventory builder
+// ═══════════════════════════════════════
+
+function _buildCustomInventoryUrl() {
+    const osType = document.getElementById('invOsType')?.value || '';
+    const sysSelect = document.getElementById('invSystemName');
+    const stSelect = document.getElementById('invServiceType');
+
+    let url = '/api/export/custom-inventory?';
+    if (osType) url += `os_type=${encodeURIComponent(osType)}&`;
+    if (sysSelect) {
+        Array.from(sysSelect.selectedOptions).forEach(o => {
+            url += `system_name=${encodeURIComponent(o.value)}&`;
+        });
+    }
+    if (stSelect) {
+        Array.from(stSelect.selectedOptions).forEach(o => {
+            url += `system_service_type=${encodeURIComponent(o.value)}&`;
+        });
+    }
+    return url;
+}
+
+function generateCustomInventory() {
+    const url = _buildCustomInventoryUrl();
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'custom_inventory.ini';
+    a.click();
+}
+
+async function previewCustomInventory() {
+    const el = document.getElementById('inventoryPreview');
+    if (!el) return;
+    el.innerHTML = LOADER;
+    const url = _buildCustomInventoryUrl();
+    try {
+        const resp = await fetch(url);
+        const text = await resp.text();
+        const lines = text.split('\n');
+        el.innerHTML = '<pre style="background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:16px;overflow-x:auto;font-size:13px;font-family:var(--font-mono);color:var(--text-primary);max-height:400px;overflow-y:auto;margin:0">' +
+            lines.map(line => {
+                if (line.startsWith('#')) return '<span style="color:var(--text-muted)">' + line + '</span>';
+                if (line.startsWith('[')) return '<span style="color:var(--primary);font-weight:600">' + line + '</span>';
+                return line;
+            }).join('\n') +
+            '</pre>';
+    } catch (e) {
+        el.innerHTML = '<p style="color:var(--critical)">Ошибка загрузки</p>';
+    }
 }
 
 // ═══════════════════════════════════════
