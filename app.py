@@ -1375,7 +1375,7 @@ def api_export_csv():
             n["Meta"].get("system_owner", ""),
             "; ".join(svcs),
         ])
-    return Response(output.getvalue(), mimetype="text/csv",
+    return Response("\ufeff" + output.getvalue(), mimetype="text/csv; charset=utf-8",
                     headers={"Content-Disposition": "attachment; filename=servers_report.csv"})
 
 
@@ -1422,7 +1422,7 @@ def api_export_systems_csv():
             name, d["owner"], d["team"], d["service_type"],
             d["servers"], "; ".join(sorted(d["envs"])), "; ".join(sorted(d["dcs"])),
         ])
-    return Response(output.getvalue(), mimetype="text/csv",
+    return Response("\ufeff" + output.getvalue(), mimetype="text/csv; charset=utf-8",
                     headers={"Content-Disposition": "attachment; filename=systems_report.csv"})
 
 
