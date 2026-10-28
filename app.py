@@ -1385,43 +1385,17 @@ def api_export_systems_csv():
     from flask import Response
     nodes = get_nodes()
 
-    systems = {}
-    for n in nodes:
-        sys_name = (n["Meta"].get("system_name") or "").strip()
-        if not sys_name or sys_name == "-":
-            continue
-        if sys_name not in systems:
-            systems[sys_name] = {
-                "owner": "", "team": "", "servers": 0,
-                "envs": set(), "dcs": set(), "service_type": "",
-            }
-        s = systems[sys_name]
-        s["servers"] += 1
-        owner = (n["Meta"].get("system_owner") or "").strip()
-        if owner and not s["owner"]:
-            s["owner"] = owner
-        team = (n["Meta"].get("team") or "").strip()
-        if team and team != "-" and not s["team"]:
-            s["team"] = team
-        env = (n["Meta"].get("environment") or "").strip()
-        if env and env != "-":
-            s["envs"].add(env)
-        dc = (n.get("Datacenter") or "").strip()
-        if dc:
-            s["dcs"].add(dc)
-        sst = (n["Meta"].get("system_service_type") or "").strip()
-        if sst and not s["service_type"]:
-            s["service_type"] = sst
+    system_names = sorted({
+        n["Meta"].get("system_name", "").strip()
+        for n in nodes
+        if (n["Meta"].get("system_name") or "").strip() and n["Meta"]["system_name"] != "-"
+    })
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["ИС", "Владелец", "Команда", "Тип сервиса", "Серверы", "Среды", "Дата-центры"])
-    for name in sorted(systems.keys()):
-        d = systems[name]
-        writer.writerow([
-            name, d["owner"], d["team"], d["service_type"],
-            d["servers"], "; ".join(sorted(d["envs"])), "; ".join(sorted(d["dcs"])),
-        ])
+    writer.writerow(["ИС"])
+    for name in system_names:
+        writer.writerow([name])
     return Response("\ufeff" + output.getvalue(), mimetype="text/csv; charset=utf-8",
                     headers={"Content-Disposition": "attachment; filename=systems_report.csv"})
 
