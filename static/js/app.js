@@ -87,8 +87,11 @@ function toggleSidebar() {
 }
 
 let _searchTimer = null;
+let _searchVersion = 0;
 function onGlobalSearch(val) {
     clearTimeout(_searchTimer);
+    const version = ++_searchVersion;
+    val = val.trim();
     const dropdown = document.getElementById('searchDropdown');
     if (!val || val.length < 2) {
         if (dropdown) dropdown.style.display = 'none';
@@ -96,7 +99,7 @@ function onGlobalSearch(val) {
     }
     _searchTimer = setTimeout(async () => {
         const data = await api('/api/search?q=' + encodeURIComponent(val));
-        renderSearchDropdown(data);
+        if (version === _searchVersion) renderSearchDropdown(data);
     }, 300);
 }
 
@@ -108,43 +111,51 @@ function renderSearchDropdown(data) {
         dropdown.className = 'search-dropdown';
         document.querySelector('.search-global').appendChild(dropdown);
     }
+    dropdown.replaceChildren();
 
-    const hasResults = data.systems.length || data.servers.length || data.services.length;
-    if (!hasResults) {
-        dropdown.innerHTML = '<div class="search-empty">Ничего не найдено</div>';
-        dropdown.style.display = 'block';
-        return;
+    function addGroup(title, items, view, field, name, meta) {
+        if (!items?.length) return;
+        const heading = document.createElement('div');
+        heading.className = 'search-group-title';
+        heading.textContent = title;
+        dropdown.appendChild(heading);
+        items.forEach(item => {
+            const row = document.createElement('div');
+            row.className = 'search-item';
+            const label = document.createElement('span');
+            label.className = 'search-item-name';
+            label.textContent = name(item);
+            row.appendChild(label);
+            if (meta) {
+                const detail = document.createElement('span');
+                detail.className = 'search-item-meta';
+                detail.textContent = meta(item);
+                row.appendChild(detail);
+            }
+            row.addEventListener('click', () => globalSearchGo(view, name(item), field));
+            dropdown.appendChild(row);
+        });
     }
 
-    let html = '';
-    if (data.systems.length) {
-        html += '<div class="search-group-title">Информационные системы</div>';
-        html += data.systems.map(s =>
-            '<div class="search-item" onclick="globalSearchGo(\'servers\',\'' + s.replace(/'/g, "\\'") + '\',\'system_name\')">' +
-            '<span class="badge badge-system">' + s + '</span></div>'
-        ).join('');
+    addGroup('Информационные системы', data.systems, 'servers', 'system_name', s => s);
+    addGroup('Владельцы', data.owners, 'servers', 'owner', s => s);
+    addGroup('Типы сервисов', data.service_types, 'servers', 'system_service_type', s => s);
+    addGroup('Серверы', data.servers, 'servers', 'search', n => n.Node,
+        n => n.Address + ' · ' + n.system_name);
+    addGroup('Экспортеры', data.services, 'services', 'search', s => s.name,
+        s => s.instances + ' экз.');
+    if (!dropdown.children.length) {
+        const empty = document.createElement('div');
+        empty.className = 'search-empty';
+        empty.textContent = 'Ничего не найдено';
+        dropdown.appendChild(empty);
     }
-    if (data.servers.length) {
-        html += '<div class="search-group-title">Серверы</div>';
-        html += data.servers.map(n =>
-            '<div class="search-item" onclick="globalSearchGo(\'servers\',\'' + n.Node.replace(/'/g, "\\'") + '\')">' +
-            '<span class="search-item-name">' + n.Node + '</span>' +
-            '<span class="search-item-meta">' + n.Address + ' &middot; ' + n.system_name + '</span></div>'
-        ).join('');
-    }
-    if (data.services.length) {
-        html += '<div class="search-group-title">Экспортеры</div>';
-        html += data.services.map(s =>
-            '<div class="search-item" onclick="globalSearchGo(\'services\',\'' + s.name.replace(/'/g, "\\'") + '\')">' +
-            '<span class="search-item-name">' + s.name + '</span>' +
-            '<span class="search-item-meta">' + s.instances + ' экз.</span></div>'
-        ).join('');
-    }
-    dropdown.innerHTML = html;
     dropdown.style.display = 'block';
 }
 
 function globalSearchGo(view, query, filterField) {
+    clearTimeout(_searchTimer);
+    ++_searchVersion;
     document.getElementById('searchDropdown').style.display = 'none';
     document.getElementById('globalSearch').value = '';
     // Store pending filter for after render
@@ -447,11 +458,12 @@ async function renderServers() {
     const el = $('#view-servers');
     el.innerHTML = LOADER;
 
-    const [dcs, envs, owners, systems] = await Promise.all([
+    const [dcs, envs, owners, systems, serviceTypes] = await Promise.all([
         api('/api/datacenters'),
         api('/api/environments'),
         api('/api/owners_list'),
         api('/api/systems'),
+        api('/api/service_types'),
     ]);
 
     const globalSearch = $('#globalSearch').value || '';
@@ -484,7 +496,13 @@ async function renderServers() {
                 <span class="filter-label">Владелец</span>
                 <select class="filter-select" id="filterOwner" onchange="applyServerFilters()">
                     <option value="">Все</option>
-                    ${owners.map(o => `<option value="${o}">${o}</option>`).join('')}
+
+                </select>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Тип сервиса</span>
+                <select class="filter-select" id="filterServiceType" onchange="applyServerFilters()">
+                    <option value="">Все</option>
                 </select>
             </div>
             <div class="filter-group">
@@ -501,12 +519,19 @@ async function renderServers() {
         </div>
         <div class="table-wrapper" id="serversContainer"></div>
     `;
+    const ownerSelect = document.getElementById('filterOwner');
+    owners.forEach(owner => ownerSelect.add(new Option(owner, owner)));
+    const typeSelect = document.getElementById('filterServiceType');
+    serviceTypes.forEach(type => typeSelect.add(new Option(type, type)));
     // Apply pending filter from global search
     if (window._pendingFilter) {
         const pf = window._pendingFilter;
         window._pendingFilter = null;
         if (pf.field === 'system_name') {
             const sel = document.getElementById('filterSystem');
+            if (sel) { sel.value = pf.value; }
+        } else if (pf.field === 'owner' || pf.field === 'system_service_type') {
+            const sel = document.getElementById(pf.field === 'owner' ? 'filterOwner' : 'filterServiceType');
             if (sel) { sel.value = pf.value; }
         } else if (pf.field === 'search') {
             const inp = document.getElementById('filterServerSearch');
@@ -524,6 +549,7 @@ async function applyServerFilters() {
     const dc = document.getElementById('filterDc')?.value || '';
     const env = document.getElementById('filterEnv')?.value || '';
     const team = document.getElementById('filterOwner')?.value || '';
+    const serviceType = document.getElementById('filterServiceType')?.value || '';
     const systemName = document.getElementById('filterSystem')?.value || '';
     const search = document.getElementById('filterServerSearch')?.value || '';
 
@@ -531,6 +557,7 @@ async function applyServerFilters() {
     if (dc) url += `dc=${encodeURIComponent(dc)}&`;
     if (env) url += `env=${encodeURIComponent(env)}&`;
     if (team) url += `owner=${encodeURIComponent(team)}&`;
+    if (serviceType) url += `system_service_type=${encodeURIComponent(serviceType)}&`;
     if (systemName) url += `system_name=${encodeURIComponent(systemName)}&`;
     if (search) url += `search=${encodeURIComponent(search)}&`;
 
@@ -722,7 +749,7 @@ async function applyServerFilters() {
 }
 
 function resetServerFilters() {
-    ['filterSystem', 'filterDc', 'filterEnv', 'filterOwner', 'filterStatus', 'filterServerSearch'].forEach(id => {
+    ['filterSystem', 'filterDc', 'filterEnv', 'filterOwner', 'filterServiceType', 'filterStatus', 'filterServerSearch'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
     });

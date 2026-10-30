@@ -83,13 +83,17 @@ def _test_nodes(filters=None):
             result = [n for n in result if n["Meta"].get("team") == filters["team"]]
         if filters.get("owner"):
             result = [n for n in result if n["Meta"].get("system_owner") == filters["owner"]]
+        if filters.get("system_service_type"):
+            result = [n for n in result if n["Meta"].get("system_service_type") == filters["system_service_type"]]
         if filters.get("system_name"):
             result = [n for n in result if n["Meta"].get("system_name") == filters["system_name"]]
         if filters.get("search"):
             s = filters["search"].lower()
             result = [n for n in result if s in n["Node"].lower()
                       or s in n["Address"]
-                      or s in (n["Meta"].get("system_name") or "").lower()]
+                      or s in (n["Meta"].get("system_name") or "").lower()
+                      or s in (n["Meta"].get("system_owner") or "").lower()
+                      or s in (n["Meta"].get("system_service_type") or "").lower()]
     return result
 
 def _live_nodes(filters=None):
@@ -105,13 +109,17 @@ def _live_nodes(filters=None):
             result = [n for n in result if n["Meta"].get("team") == filters["team"]]
         if filters.get("owner"):
             result = [n for n in result if n["Meta"].get("system_owner") == filters["owner"]]
+        if filters.get("system_service_type"):
+            result = [n for n in result if n["Meta"].get("system_service_type") == filters["system_service_type"]]
         if filters.get("system_name"):
             result = [n for n in result if n["Meta"].get("system_name") == filters["system_name"]]
         if filters.get("search"):
             s = filters["search"].lower()
             result = [n for n in result if s in n["Node"].lower()
                       or s in n["Address"]
-                      or s in (n["Meta"].get("system_name") or "").lower()]
+                      or s in (n["Meta"].get("system_name") or "").lower()
+                      or s in (n["Meta"].get("system_owner") or "").lower()
+                      or s in (n["Meta"].get("system_service_type") or "").lower()]
     return result
 
 def get_nodes(filters=None):
@@ -233,7 +241,7 @@ def api_datacenters():
 
 @app.route("/api/nodes")
 def api_nodes():
-    filters = {k: request.args.get(k) for k in ["dc", "env", "team", "owner", "system_name", "search"] if request.args.get(k)}
+    filters = {k: request.args.get(k) for k in ["dc", "env", "team", "owner", "system_name", "system_service_type", "search"] if request.args.get(k)}
     return jsonify(get_nodes(filters))
 
 @app.route("/api/nodes/<node_name>")
@@ -497,7 +505,7 @@ def api_health_details():
 def api_global_search():
     q = request.args.get("q", "").lower().strip()
     if len(q) < 2:
-        return jsonify({"servers": [], "services": [], "systems": []})
+        return jsonify({"servers": [], "services": [], "systems": [], "owners": [], "service_types": []})
     # Search servers
     nodes = get_nodes()
     matched_nodes = [{"Node": n["Node"], "Address": n["Address"],
@@ -505,7 +513,9 @@ def api_global_search():
                       "system_name": n["Meta"].get("system_name", "-")}
                      for n in nodes if q in n["Node"].lower()
                      or q in n["Address"]
-                     or q in (n["Meta"].get("system_name") or "").lower()][:20]
+                     or q in (n["Meta"].get("system_name") or "").lower()
+                     or q in (n["Meta"].get("system_owner") or "").lower()
+                     or q in (n["Meta"].get("system_service_type") or "").lower()][:20]
     # Search services
     services = get_services()
     matched_svcs = [{"name": s["name"], "instances": s["instances"]}
@@ -514,7 +524,13 @@ def api_global_search():
     all_sys = sorted({n["Meta"].get("system_name", "") for n in nodes
                       if n["Meta"].get("system_name") and n["Meta"]["system_name"] != "-"})
     matched_sys = [s for s in all_sys if q in s.lower()][:20]
-    return jsonify({"servers": matched_nodes, "services": matched_svcs, "systems": matched_sys})
+    owners = sorted({n["Meta"].get("system_owner") for n in nodes
+                     if n["Meta"].get("system_owner")})
+    service_types = sorted({n["Meta"].get("system_service_type") for n in nodes
+                            if n["Meta"].get("system_service_type")})
+    return jsonify({"servers": matched_nodes, "services": matched_svcs, "systems": matched_sys,
+                    "owners": [owner for owner in owners if q in owner.lower()][:20],
+                    "service_types": [kind for kind in service_types if q in kind.lower()][:20]})
 
 @app.route("/api/tags")
 def api_tags():
@@ -533,6 +549,12 @@ def api_teams():
 def api_owners_list():
     nodes = get_nodes()
     return jsonify(sorted({n["Meta"].get("system_owner", "") for n in nodes if n["Meta"].get("system_owner")}))
+
+@app.route("/api/service_types")
+def api_service_types():
+    nodes = get_nodes()
+    return jsonify(sorted({n["Meta"].get("system_service_type") for n in nodes
+                           if n["Meta"].get("system_service_type")}))
 
 @app.route("/api/environments")
 def api_environments():
