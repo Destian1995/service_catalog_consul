@@ -101,7 +101,7 @@ class JournalTests(unittest.TestCase):
     def test_api_and_page_without_contacting_consul(self):
         with patch.dict(os.environ, CONSUL_AUDIT_FILES=""), patch("consul_client.start_cache_warmer"):
             import app as portal
-            with portal.app.test_client() as client:
+            with portal.app.test_client() as client, patch.object(portal, "load_config", return_value={"mode": "test", "clusters": {}}):
                 response = client.get("/api/deregistrations")
                 self.assertEqual(response.status_code, 200)
                 self.assertFalse(response.json["coverage"]["audit_configured"])
@@ -124,6 +124,17 @@ class JournalTests(unittest.TestCase):
             send.return_value.status_code = 200
             self.assertTrue(client.deregister_node("uknrd101", "1xx"))
         self.assertEqual(journal.journal_data()["events"][0]["outcome"], "requested")
+
+
+    def test_tracking_targets_hide_secrets_and_do_not_infer_proxy(self):
+        config = dict(mode="live", clusters={"prod": dict(name="Production", datacenters=[
+            dict(name="1xx", scheme="https", host="user:SECRET@consul.example:8501/private?token=SECRET", token="SECRET")])})
+        result = journal.journal_data(config=config)
+        self.assertEqual(result["coverage"]["portal_mode"], "live")
+        self.assertEqual(result["coverage"]["portal_targets"], [dict(cluster="Production", datacenter="1xx", endpoint="https://consul.example:8501")])
+        self.assertNotIn("SECRET", json.dumps(result))
+        self.assertEqual(result["coverage"]["proxy_destinations"], [])
+        self.assertEqual(result["coverage"]["audit_patterns"], [str(self.root / "*.jsonl*")])
 
 
 if __name__ == "__main__":

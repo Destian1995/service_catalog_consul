@@ -20,6 +20,10 @@
   <section class="panel coverage" id="coverage" role="status"><strong id="coverage-title">Проверяем источники журнала…</strong><div id="coverage-text"></div>
     <details><summary>Границы наблюдения и состояние чтения</summary><p>Журнал портала фиксирует его собственные команды. Подключённые audit-файлы показывают HTTP-запросы, попавшие в эти файлы. Внутренние RPC Consul не видны. Ответ HTTP 2xx не означает, что регистрация останется удалённой: агент может восстановить её.</p><p>IP из X-Forwarded-For указан отдельно и не является подтверждённой личностью. Если тело запроса отсутствует в аудите, имя узла остаётся неизвестным. Запись портала и audit-запись одного запроса могут отображаться отдельно.</p><div id="sources"></div></details>
   </section>
+  <section class="panel" aria-labelledby="tracking-heading">
+    <strong id="tracking-heading">Что сейчас отслеживается</strong>
+    <div id="tracking" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px;margin-top:14px"></div>
+  </section>
   <form id="filters" class="panel filters">
     <label>Узел, сервис, DC, адрес или ACL accessor<input id="query" placeholder="Например, uknrd101 или 10.120.90.72" maxlength="256"></label>
     <label>Источник<select id="source"><option value="">Все источники</option><option value="portal">Этот портал</option><option value="consul_audit">Аудит Consul Server</option><option value="http_proxy">HTTP-прокси Consul</option></select></label>

@@ -221,7 +221,28 @@ def import_audit():
     return len(paths)
 
 
-def journal_data(query="", source="", outcome="", before=0, limit=100):
+def portal_targets(config):
+    """Configured destinations only; never expose credentials or probe servers."""
+    targets = []
+    for cluster_id, cluster in config.get("clusters", {}).items():
+        for dc in cluster.get("datacenters", []):
+            try:
+                scheme = dc.get("scheme", "https")
+                parsed = urlsplit(scheme + "://" + str(dc.get("host", "")))
+                if scheme not in ("http", "https") or not parsed.hostname:
+                    continue
+                host = parsed.hostname
+                if ":" in host:
+                    host = "[" + host + "]"
+                endpoint = scheme + "://" + host + (":" + str(parsed.port) if parsed.port else "")
+            except ValueError:
+                continue
+            targets.append(dict(cluster=_text(cluster.get("name") or cluster_id),
+                                datacenter=_text(dc.get("name")), endpoint=endpoint))
+    return targets
+
+
+def journal_data(query="", source="", outcome="", before=0, limit=100, config=None):
     patterns = audit_patterns()
     matched = import_audit() if patterns else 0
     clauses, args = [], []
@@ -239,11 +260,19 @@ def journal_data(query="", source="", outcome="", before=0, limit=100):
     with _db() as conn:
         rows = [dict(r) for r in conn.execute("SELECT * FROM events" + where + " ORDER BY id DESC LIMIT ?", args + [limit + 1])]
         cursors = [dict(r) for r in conn.execute("SELECT path,offset,invalid_lines,last_read,error FROM cursors ORDER BY path")]
+        proxy_destinations = [dict(r) for r in conn.execute(
+            "SELECT server, MAX(recorded_at) AS last_seen FROM events WHERE source='http_proxy' AND server != '' GROUP BY server ORDER BY last_seen DESC LIMIT 20")]
+    selected_paths = {os.path.normcase(os.path.abspath(p)) for pattern in patterns for p in glob.glob(pattern)}
+    for cursor in cursors:
+        cursor["present"] = os.path.isfile(cursor["path"])
+        cursor["selected"] = os.path.normcase(os.path.abspath(cursor["path"])) in selected_paths
     more = len(rows) > limit
     rows = rows[:limit]
     return dict(events=rows, next_before=rows[-1]["id"] if more else None,
                 coverage=dict(portal=True, audit_configured=bool(patterns), audit_files_found=matched,
-                              internal_rpc=False, files=cursors))
+                              internal_rpc=False, files=cursors, audit_patterns=patterns,
+                              portal_mode=(config or {}).get("mode", "test"),
+                              portal_targets=portal_targets(config or {}), proxy_destinations=proxy_destinations))
 
 
 def start_audit_reader():

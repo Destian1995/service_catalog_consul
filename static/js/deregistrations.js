@@ -33,6 +33,39 @@
     status.append(element('span', event.http_status ? `HTTP ${event.http_status}` : (results[event.outcome] || 'Неизвестен'), `badge ${event.outcome || ''}`));
     row.append(status); return row;
   }
+  function renderTracking(coverage) {
+    const container = el('tracking');
+    container.replaceChildren();
+    const portal = element('div', '');
+    portal.append(element('strong', 'Команды этого портала'));
+    portal.append(element('p', coverage.portal_mode === 'live' ? 'Боевой режим · фиксируются отправки портала' : 'Тестовый режим · команды в Consul не отправляются'));
+    const targets = coverage.portal_targets || [];
+    if (!targets.length) portal.append(element('p', 'Адреса Consul не настроены'));
+    for (const target of targets) {
+      portal.append(element('div', `${target.cluster} / ${target.datacenter || 'DC не указан'}`, 'details'));
+      portal.append(element('code', target.endpoint));
+    }
+    portal.append(element('p', 'Это настроенные адреса, а не проверка доступности. Чужие запросы к ним автоматически не видны.'));
+    container.append(portal);
+    const files = element('div', '');
+    files.append(element('strong', 'Внешние HTTP-запросы · файлы логов'));
+    if (!coverage.audit_configured) files.append(element('p', 'Не подключены · видны только команды портала'));
+    for (const pattern of coverage.audit_patterns || []) files.append(element('div', pattern, 'details'));
+    for (const file of coverage.files || []) {
+      files.append(element('div', `${!file.selected ? 'Не выбран текущими настройками' : file.present ? file.error ? 'Ошибка чтения' : 'Файл найден' : 'Файл отсутствует'}: ${file.path}`, 'details'));
+    }
+    files.append(element('p', 'Файл найден — это не подтверждение, что все запросы к серверам проходят через этот источник.'));
+    container.append(files);
+    const proxy = element('div', '');
+    proxy.append(element('strong', 'Адреса из записей HTTP-прокси'));
+    if (!(coverage.proxy_destinations || []).length) proxy.append(element('p', 'Пока нет записей · адрес назначения не установлен'));
+    for (const target of coverage.proxy_destinations || []) {
+      proxy.append(element('code', target.server));
+      proxy.append(element('div', `Последняя запись: ${target.last_seen}`, 'details'));
+    }
+    proxy.append(element('p', 'Исторические адреса из журнала. Текущая конфигурация прокси и внутренний RPC здесь не проверяются.'));
+    container.append(proxy);
+  }
   async function load(append = false) {
     if (busy) return;
     busy = true; el('refresh').disabled = true; el('more').disabled = true;
@@ -55,8 +88,9 @@
       el('more').hidden = !next;
       el('count').textContent = `Показано записей: ${count}`;
       const coverage = data.coverage;
+      renderTracking(coverage);
       const connected = coverage.audit_configured && coverage.audit_files_found > 0;
-      const errors = coverage.files.some(file => file.error);
+      const errors = coverage.files.some(file => file.selected && file.present && file.error);
       el('coverage').classList.toggle('connected', connected && !errors);
       el('coverage-title').textContent = !coverage.audit_configured ? 'Серверный аудит не подключён' : errors ? 'Есть ошибки чтения серверного аудита' : connected ? 'Подключены файлы серверного аудита' : 'Файлы серверного аудита не найдены';
       el('coverage-text').textContent = !coverage.audit_configured ? 'Сейчас фиксируются только команды дерегистрации, отправленные этим порталом. Запросы от других клиентов не видны.' : `Найдено файлов: ${coverage.audit_files_found}. Охват зависит от подключённых Consul HTTP audit-логов. Внутренние RPC не записываются.`;
@@ -66,6 +100,7 @@
       el('error').textContent = error.message || 'Не удалось загрузить журнал';
       el('coverage').classList.remove('connected');
       el('coverage-title').textContent = 'Не удалось проверить источники журнала';
+      el('tracking').replaceChildren(element('p', 'Текущая привязка неизвестна: не удалось загрузить данные.'));
     } finally { busy = false; el('refresh').disabled = false; el('more').disabled = false; }
   }
   el('filters').addEventListener('submit', event => { event.preventDefault(); load(); });
