@@ -242,10 +242,13 @@ def portal_targets(config):
     return targets
 
 
-def journal_data(query="", source="", outcome="", before=0, limit=100, config=None):
+def journal_data(query="", source="", outcome="", before=0, limit=100, config=None, node=""):
     patterns = audit_patterns()
     matched = import_audit() if patterns else 0
     clauses, args = [], []
+    if node:
+        clauses.append("node_name LIKE ? ESCAPE '\\'")
+        args.append("%" + node.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
     if query:
         clauses.append("(" + " OR ".join(c + " LIKE ? ESCAPE '\\'" for c in
                        ("node_name", "service_id", "datacenter", "server", "peer_ip", "token_accessor", "endpoint")) + ")")

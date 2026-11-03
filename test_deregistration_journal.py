@@ -137,5 +137,16 @@ class JournalTests(unittest.TestCase):
         self.assertEqual(result["coverage"]["audit_patterns"], [str(self.root / "*.jsonl*")])
 
 
+    def test_node_filter_matches_node_not_service_or_unknown_target(self):
+        for node in ("uknrd101.am-aton.local", "nrd101.moscow.aton.holding", "literal_percent%"):
+            key = journal.begin_command("https://consul.example", "/catalog/deregister", {"Node": node})
+            journal.finish_command(key, 200)
+        self.append(audit("unknown-node"))
+        events = journal.journal_data(node="uknrd101")["events"]
+        self.assertEqual([e["node_name"] for e in events], ["uknrd101.am-aton.local"])
+        self.assertEqual(len(journal.journal_data(node="%")["events"]), 1)
+        self.assertEqual(journal.journal_data(node="vector")["events"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

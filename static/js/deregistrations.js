@@ -2,6 +2,7 @@
   'use strict';
   const el = id => document.getElementById(id);
   let next = null, busy = false, count = 0;
+  let activeFilters = {node: '', q: '', source: '', outcome: ''}, pendingApply = null;
   const results = {requested: 'Ответ неизвестен', http_ok: 'HTTP 2xx', http_error: 'Ошибка HTTP', transport_error: 'Ошибка соединения'};
   function element(tag, text, cls) {
     const node = document.createElement(tag);
@@ -66,16 +67,29 @@
     proxy.append(element('p', 'Исторические адреса из журнала. Текущая конфигурация прокси и внутренний RPC здесь не проверяются.'));
     container.append(proxy);
   }
-  async function load(append = false) {
+  function renderApplied(filters) {
+    const container = el('applied-filters');
+    container.replaceChildren();
+    const sourceNames = {'': 'Все источники', portal: 'Этот портал', consul_audit: 'Аудит Consul', http_proxy: 'HTTP-прокси Consul'};
+    for (const text of [filters.node ? `Узел: ${filters.node} · часть имени` : 'Узел: все',
+      filters.q ? `Поиск: ${filters.q}` : 'Поиск: без ограничений',
+      `Источник: ${sourceNames[filters.source] || filters.source}`,
+      `Результат: ${results[filters.outcome] || 'Все результаты'}`]) {
+      container.append(element('span', text, 'badge'));
+    }
+  }
+  async function load(append = false, filters = activeFilters) {
     if (busy) return;
     busy = true; el('refresh').disabled = true; el('more').disabled = true;
     el('error').textContent = '';
     try {
-      const params = new URLSearchParams({q: el('query').value, source: el('source').value, outcome: el('outcome').value, limit: '100'});
+      const params = new URLSearchParams({...filters, limit: '100'});
       if (append && next) params.set('before', next);
       const response = await fetch(`/api/deregistrations?${params}`, {cache: 'no-store'});
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      activeFilters = {...filters};
+      renderApplied(activeFilters);
       if (!append) { el('rows').replaceChildren(); count = 0; }
       data.events.forEach(event => el('rows').append(renderEvent(event)));
       count += data.events.length;
@@ -101,9 +115,17 @@
       el('coverage').classList.remove('connected');
       el('coverage-title').textContent = 'Не удалось проверить источники журнала';
       el('tracking').replaceChildren(element('p', 'Текущая привязка неизвестна: не удалось загрузить данные.'));
-    } finally { busy = false; el('refresh').disabled = false; el('more').disabled = false; }
+    } finally {
+      busy = false; el('refresh').disabled = false; el('more').disabled = false;
+      if (pendingApply) { const filters = pendingApply; pendingApply = null; load(false, filters); }
+    }
   }
-  el('filters').addEventListener('submit', event => { event.preventDefault(); load(); });
+  el('filters').addEventListener('submit', event => {
+    event.preventDefault();
+    const filters = {node: el('node').value.trim(), q: el('query').value.trim(), source: el('source').value, outcome: el('outcome').value};
+    if (busy) pendingApply = filters;
+    else load(false, filters);
+  });
   el('refresh').addEventListener('click', () => load());
   el('more').addEventListener('click', () => { el('auto').checked = false; load(true); });
   setInterval(() => { if (el('auto').checked && !document.hidden) load(); }, 10000);

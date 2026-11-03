@@ -24,12 +24,18 @@
     <strong id="tracking-heading">Что сейчас отслеживается</strong>
     <div id="tracking" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px;margin-top:14px"></div>
   </section>
-  <form id="filters" class="panel filters">
-    <label>Узел, сервис, DC, адрес или ACL accessor<input id="query" placeholder="Например, uknrd101 или 10.120.90.72" maxlength="256"></label>
+  <form id="filters" class="panel filters" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+    <label>Узел · часть имени<input id="node" placeholder="Например, uknrd101" maxlength="256"></label>
+    <label>Сервис, DC, адрес или общий поиск<input id="query" placeholder="Например, vector или 10.120.90.72" maxlength="256"></label>
     <label>Источник<select id="source"><option value="">Все источники</option><option value="portal">Этот портал</option><option value="consul_audit">Аудит Consul Server</option><option value="http_proxy">HTTP-прокси Consul</option></select></label>
     <label>Результат<select id="outcome"><option value="">Все результаты</option><option value="requested">Запрос отправляется / ответ неизвестен</option><option value="http_ok">HTTP 2xx</option><option value="http_error">Ошибка HTTP</option><option value="transport_error">Ошибка соединения</option></select></label>
     <button type="submit">Применить</button>
   </form>
+  <section class="panel" aria-live="polite" aria-labelledby="applied-title">
+    <strong id="applied-title">Применённые фильтры</strong>
+    <div id="applied-filters" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">Загрузка…</div>
+    <p>Поле «Узел» фильтрует записи по части имени. Записи без имени узла не попадут в эту выборку. Фильтр не запускает дополнительный сбор на хосте.</p>
+  </section>
   <div class="toolbar"><span id="count" class="muted">Загрузка…</span><label><input type="checkbox" id="auto" checked>Автообновление каждые 10 секунд</label></div>
   <div id="error" class="error" role="alert"></div>
   <div class="table-wrap"><table><thead><tr><th>Время · UTC</th><th>Источник</th><th>Запрос и объект</th><th>Адрес источника</th><th>Результат</th></tr></thead><tbody id="rows"></tbody></table></div>

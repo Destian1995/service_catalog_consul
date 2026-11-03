@@ -1812,7 +1812,8 @@ def api_deregistrations():
     try:
         return jsonify(journal_data(request.args.get("q", "")[:256],
                                     request.args.get("source", "")[:32],
-                                    request.args.get("outcome", "")[:32], before, limit, config=load_config()))
+                                    request.args.get("outcome", "")[:32], before, limit, config=load_config(),
+                                    node=request.args.get("node", "").strip()[:256]))
     except Exception as exc:
         log.error("Deregistration journal unavailable: %s", type(exc).__name__)
         return jsonify({"error": "Журнал недоступен. Проверьте права на каталог данных и конфигурацию audit-файлов."}), 503
