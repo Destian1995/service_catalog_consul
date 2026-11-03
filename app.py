@@ -1801,6 +1801,28 @@ def api_save_architecture():
 # Serve SPA + Admin
 # ──────────────────────────────────────
 
+@app.route("/api/deregistrations")
+def api_deregistrations():
+    from deregistration_journal import journal_data
+    try:
+        limit = max(1, min(int(request.args.get("limit", 100)), 200))
+        before = max(0, int(request.args.get("before", 0)))
+    except (ValueError, TypeError):
+        return jsonify({"error": "limit and before must be integers"}), 400
+    try:
+        return jsonify(journal_data(request.args.get("q", "")[:256],
+                                    request.args.get("source", "")[:32],
+                                    request.args.get("outcome", "")[:32], before, limit))
+    except Exception as exc:
+        log.error("Deregistration journal unavailable: %s", type(exc).__name__)
+        return jsonify({"error": "Журнал недоступен. Проверьте права на каталог данных и конфигурацию audit-файлов."}), 503
+
+
+@app.route("/deregistrations")
+def deregistrations_page():
+    return send_from_directory("static", "deregistrations.html")
+
+
 @app.route("/")
 def index():
     return send_from_directory("static", "index.html")
@@ -1823,6 +1845,9 @@ def _start_warmer():
         log.error(f"Failed to start cache warmer: {e}")
 
 _start_warmer()
+
+from deregistration_journal import start_audit_reader
+start_audit_reader()
 
 if __name__ == "__main__":
     cfg = load_config()

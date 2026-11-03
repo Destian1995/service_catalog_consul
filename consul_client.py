@@ -91,13 +91,31 @@ class ConsulClient:
 
     def _put(self, path, data):
         url = f"{self.base_url}/v1{path}"
+        journal_key = None
+        if path == "/catalog/deregister":
+            from deregistration_journal import begin_command
+            journal_key = begin_command(self.base_url, path, data)
         try:
             r = requests.put(url, headers=self.headers, json=data,
                              verify=self.verify, timeout=DEFAULT_TIMEOUT)
+            if journal_key:
+                from deregistration_journal import finish_command
+                try:
+                    finish_command(journal_key, r.status_code)
+                except Exception as journal_error:
+                    # The request already reached Consul. Do not report an accepted
+                    # command as failed just because persisting its result failed.
+                    log.error("Deregistration result journal unavailable: %s", type(journal_error).__name__)
             log.debug(f"[DC:{self.dc_name}] PUT {path} -> {r.status_code}")
             r.raise_for_status()
             return True
         except Exception as e:
+            if journal_key and isinstance(e, requests.exceptions.RequestException) and not isinstance(e, requests.exceptions.HTTPError):
+                from deregistration_journal import finish_command
+                try:
+                    finish_command(journal_key, error=True)
+                except Exception as journal_error:
+                    log.error("Deregistration result journal unavailable: %s", type(journal_error).__name__)
             log.error(f"[DC:{self.dc_name}] PUT ERR {url}: {e}")
             return False
 

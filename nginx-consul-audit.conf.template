@@ -1,0 +1,27 @@
+# Optional HTTP gateway. Only requests routed THROUGH this gateway are observed.
+# No bodies, query strings, Authorization or X-Consul-Token are logged.
+map "$request_method:$uri" $record_deregistration {
+    default 0;
+    ~^PUT:/v1/catalog/deregister$ 1;
+    ~^PUT:/v1/agent/(service|check)/deregister/ 1;
+}
+log_format consul_deregistration escape=json
+    '{"type":"consul_http_proxy","time":"$time_iso8601",'
+    '"request_id":"$request_id","method":"$request_method",'
+    '"endpoint":"$uri","remote_addr":"$remote_addr",'
+    '"status":$status,"upstream_addr":"$upstream_addr"}';
+server {
+    listen 8500;
+    access_log /audit/deregistrations.jsonl consul_deregistration if=$record_deregistration;
+    location / {
+        proxy_pass ${CONSUL_UPSTREAM};
+        proxy_set_header Host $proxy_host;
+        proxy_set_header X-Request-ID $request_id;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_ssl_server_name on;
+        proxy_ssl_verify on;
+        proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+        proxy_read_timeout 600s;
+        proxy_connect_timeout 10s;
+    }
+}

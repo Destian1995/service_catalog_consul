@@ -1,0 +1,23 @@
+# Optional: docker compose -f docker-compose.yml -f docker-compose.audit.yml up -d --build
+# Set CONSUL_UPSTREAM to the actual Consul HTTP(S) endpoint before using this file.
+services:
+  catalog-app:
+    environment:
+      CONSUL_AUDIT_FILES: '["/audit/*.jsonl"]'
+    volumes:
+      - consul-http-audit:/audit:ro
+  consul-http-audit:
+    image: nginx:alpine
+    restart: unless-stopped
+    environment:
+      CONSUL_UPSTREAM: ${CONSUL_UPSTREAM:?Set CONSUL_UPSTREAM to the Consul HTTP(S) endpoint}
+    volumes:
+      - ./nginx-consul-audit.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - consul-http-audit:/audit
+    # Local access only. Select an appropriate protected listener for remote clients.
+    ports:
+      - "127.0.0.1:18500:8500"
+    networks:
+      - catalog-net
+volumes:
+  consul-http-audit:

@@ -5,6 +5,11 @@ services:
     restart: unless-stopped
     volumes:
       - ./consul_manager_config.json:/app/consul_manager_config.json
+      - catalog-journal:/app/data
+    environment:
+      CONSUL_JOURNAL_DB: /app/data/deregistrations.sqlite3
+      # To import external HTTP requests, mount Consul Enterprise audit logs read-only
+      # and set CONSUL_AUDIT_FILES, for example '["/audit/*.jsonl*"]'.
     networks:
       - catalog-net
 
@@ -24,3 +29,6 @@ services:
 networks:
   catalog-net:
     driver: bridge
+
+volumes:
+  catalog-journal:

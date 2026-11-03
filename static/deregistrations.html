@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Журнал дерегистраций · Каталог Consul</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0c1020;--panel:#151b2e;--line:#2b3550;--muted:#a1acc5;--text:#eef2ff;--accent:#a6a5ff}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 system-ui,sans-serif}
+    main{max-width:1560px;margin:auto;padding:32px}a{color:var(--accent);text-decoration:none}header{display:flex;justify-content:space-between;gap:20px;align-items:center;margin:24px 0}
+    h1{margin:3px 0;font-size:30px;letter-spacing:-.8px}p{margin:6px 0;color:var(--muted)}.eyebrow{color:var(--accent);font-size:12px;letter-spacing:1.5px;text-transform:uppercase}
+    .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;margin:16px 0}.coverage{border-left:3px solid #f0bf69}.coverage.connected{border-left-color:#6ee7b7}.coverage strong{display:block;margin-bottom:4px}
+    .filters{display:grid;grid-template-columns:minmax(220px,1fr) 200px 220px auto;gap:14px;align-items:end}label{display:block;color:var(--muted);font-size:12px}input,select,button{font:inherit;border:1px solid var(--line);border-radius:8px;background:#0e1426;color:var(--text);padding:10px 12px}input,select{width:100%;margin-top:6px}button{cursor:pointer}button:hover{border-color:var(--accent)}button:disabled{opacity:.5;cursor:default}button.primary{background:#6462da;border-color:#6462da}
+    .toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:20px 0 12px}.toolbar label{font-size:13px}.toolbar input{width:auto;margin-right:8px}.muted{color:var(--muted)}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px}table{width:100%;border-collapse:collapse;text-align:left;white-space:nowrap}th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.8px;background:#11182a}td,th{padding:14px 16px;border-bottom:1px solid var(--line)}tbody tr:hover{background:#1b2440}td.wrap{white-space:normal;min-width:210px;max-width:380px;overflow-wrap:anywhere}td code{color:#c7d2fe;font-size:12px}.badge{padding:4px 8px;border-radius:6px;background:#252e46;font-size:12px}.http_ok{color:#6ee7b7;background:#12372f}.http_error,.transport_error{color:#fda4af;background:#462434}.requested{color:#fde68a;background:#403923}.details{margin-top:6px;color:var(--muted);font-size:12px}.empty{text-align:center;padding:40px;color:var(--muted)}.error{color:#fda4af}.footer{display:flex;justify-content:space-between;align-items:center;margin-top:18px}details{color:var(--muted);margin-top:12px}summary{cursor:pointer}#sources{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
+    @media(max-width:900px){main{padding:18px}.filters{grid-template-columns:1fr 1fr}header{align-items:flex-start}h1{font-size:25px}}@media(max-width:540px){.filters{grid-template-columns:1fr}.toolbar,header{flex-direction:column;align-items:flex-start}}
+  </style>
+</head>
+<body><main>
+  <a href="/">← Каталог сервисов</a>
+  <header><div><div class="eyebrow">Consul · Журнал запросов</div><h1>Дерегистрации</h1><p>Когда отправлен запрос, откуда он пришёл и какой ответ вернул HTTP API.</p></div><button id="refresh" class="primary">Обновить</button></header>
+  <section class="panel coverage" id="coverage" role="status"><strong id="coverage-title">Проверяем источники журнала…</strong><div id="coverage-text"></div>
+    <details><summary>Границы наблюдения и состояние чтения</summary><p>Журнал портала фиксирует его собственные команды. Подключённые audit-файлы показывают HTTP-запросы, попавшие в эти файлы. Внутренние RPC Consul не видны. Ответ HTTP 2xx не означает, что регистрация останется удалённой: агент может восстановить её.</p><p>IP из X-Forwarded-For указан отдельно и не является подтверждённой личностью. Если тело запроса отсутствует в аудите, имя узла остаётся неизвестным. Запись портала и audit-запись одного запроса могут отображаться отдельно.</p><div id="sources"></div></details>
+  </section>
+  <form id="filters" class="panel filters">
+    <label>Узел, сервис, DC, адрес или ACL accessor<input id="query" placeholder="Например, uknrd101 или 10.120.90.72" maxlength="256"></label>
+    <label>Источник<select id="source"><option value="">Все источники</option><option value="portal">Этот портал</option><option value="consul_audit">Аудит Consul Server</option><option value="http_proxy">HTTP-прокси Consul</option></select></label>
+    <label>Результат<select id="outcome"><option value="">Все результаты</option><option value="requested">Запрос отправляется / ответ неизвестен</option><option value="http_ok">HTTP 2xx</option><option value="http_error">Ошибка HTTP</option><option value="transport_error">Ошибка соединения</option></select></label>
+    <button type="submit">Применить</button>
+  </form>
+  <div class="toolbar"><span id="count" class="muted">Загрузка…</span><label><input type="checkbox" id="auto" checked>Автообновление каждые 10 секунд</label></div>
+  <div id="error" class="error" role="alert"></div>
+  <div class="table-wrap"><table><thead><tr><th>Время · UTC</th><th>Источник</th><th>Запрос и объект</th><th>Адрес источника</th><th>Результат</th></tr></thead><tbody id="rows"></tbody></table></div>
+  <div class="footer"><span class="muted" id="updated"></span><button id="more" hidden>Показать более ранние</button></div>
+</main><script src="/static/js/deregistrations.js"></script></body></html>
