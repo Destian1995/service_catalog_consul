@@ -510,6 +510,7 @@ async function renderServers() {
                 <select class="filter-select" id="filterStatus" onchange="applyServerFilters()">
                     <option value="">Все</option>
                     <option value="passing">Норма</option>
+                    <option value="warning">Предупреждение</option>
                     <option value="critical">Критичный</option>
                 </select>
             </div>
@@ -579,7 +580,9 @@ async function applyServerFilters() {
         const checks = detail.checks || [];
         const serfCheck = checks.find(c => c.CheckID === 'serfHealth');
         const agentDown = serfCheck?.Status === 'critical';
-        const status = agentDown ? 'critical' : 'passing';
+        const serviceProblem = checks.some(c => c.CheckID !== 'serfHealth'
+            && (c.Status === 'critical' || c.Status === 'warning'));
+        const status = agentDown ? 'critical' : serviceProblem ? 'warning' : 'passing';
         return { node: nodes[i], detail, status };
     });
     if (statusFilter) {
