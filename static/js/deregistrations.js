@@ -16,6 +16,7 @@
     row.append(time);
     const source = element('td', event.source === 'portal' ? 'Этот портал' : event.source === 'http_proxy' ? 'HTTP-прокси Consul' : 'Аудит Consul');
     source.append(element('div', event.server || 'Сервер неизвестен', 'details'));
+    if (event.actor) source.append(element('div', `Пользователь: ${event.actor}`, 'details'));
     row.append(source);
     const target = element('td', '', 'wrap');
     target.append(element('code', `${event.method || 'PUT'} ${event.endpoint || ''}`));

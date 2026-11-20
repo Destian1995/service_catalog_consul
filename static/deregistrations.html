@@ -18,7 +18,7 @@
   <a href="/">← Каталог сервисов</a>
   <header><div><div class="eyebrow">Consul · Журнал запросов</div><h1>Дерегистрации</h1><p>Когда отправлен запрос, откуда он пришёл и какой ответ вернул HTTP API.</p></div><button id="refresh" class="primary">Обновить</button></header>
   <section class="panel coverage" id="coverage" role="status"><strong id="coverage-title">Проверяем источники журнала…</strong><div id="coverage-text"></div>
-    <details><summary>Границы наблюдения и состояние чтения</summary><p>Журнал портала фиксирует его собственные команды. Подключённые audit-файлы показывают HTTP-запросы, попавшие в эти файлы. Внутренние RPC Consul не видны. Ответ HTTP 2xx не означает, что регистрация останется удалённой: агент может восстановить её.</p><p>IP из X-Forwarded-For указан отдельно и не является подтверждённой личностью. Если тело запроса отсутствует в аудите, имя узла остаётся неизвестным. Запись портала и audit-запись одного запроса могут отображаться отдельно.</p><div id="sources"></div></details>
+    <details><summary>Границы наблюдения и состояние чтения</summary><p>Журнал портала фиксирует его собственные команды. Подключённые audit-файлы показывают HTTP-запросы, попавшие в эти файлы. Внутренние RPC Consul не видны. Ответ HTTP 2xx не означает, что регистрация останется удалённой: агент может восстановить её.</p><p>Для команд этого портала указан пользователь, вошедший через Keycloak. IP из X-Forwarded-For указан отдельно и не является подтверждённой личностью. Если тело запроса отсутствует в аудите, имя узла остаётся неизвестным. Запись портала и audit-запись одного запроса могут отображаться отдельно.</p><div id="sources"></div></details>
   </section>
   <section class="panel" aria-labelledby="tracking-heading">
     <strong id="tracking-heading">Что сейчас отслеживается</strong>
@@ -26,7 +26,7 @@
   </section>
   <form id="filters" class="panel filters" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
     <label>Узел · часть имени<input id="node" placeholder="Например, uknrd101" maxlength="256"></label>
-    <label>Сервис, DC, адрес или общий поиск<input id="query" placeholder="Например, vector или 10.120.90.72" maxlength="256"></label>
+    <label>Сервис, DC, адрес, пользователь или общий поиск<input id="query" placeholder="Например, vector или 10.120.90.72" maxlength="256"></label>
     <label>Источник<select id="source"><option value="">Все источники</option><option value="portal">Этот портал</option><option value="consul_audit">Аудит Consul Server</option><option value="http_proxy">HTTP-прокси Consul</option></select></label>
     <label>Результат<select id="outcome"><option value="">Все результаты</option><option value="requested">Запрос отправляется / ответ неизвестен</option><option value="http_ok">HTTP 2xx</option><option value="http_error">Ошибка HTTP</option><option value="transport_error">Ошибка соединения</option></select></label>
     <button type="submit">Применить</button>
@@ -40,4 +40,4 @@
   <div id="error" class="error" role="alert"></div>
   <div class="table-wrap"><table><thead><tr><th>Время · UTC</th><th>Источник</th><th>Запрос и объект</th><th>Адрес источника</th><th>Результат</th></tr></thead><tbody id="rows"></tbody></table></div>
   <div class="footer"><span class="muted" id="updated"></span><button id="more" hidden>Показать более ранние</button></div>
-</main><script src="/static/js/deregistrations.js"></script></body></html>
+</main><script src="/static/js/auth.js"></script><script src="/static/js/deregistrations.js"></script></body></html>

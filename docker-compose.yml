@@ -3,6 +3,8 @@ services:
     build: .
     container_name: catalog-app
     restart: unless-stopped
+    # Настройки входа через Keycloak: скопируйте .env.example в .env и заполните.
+    env_file: .env
     volumes:
       - ./consul_manager_config.json:/app/consul_manager_config.json
       - catalog-journal:/app/data
@@ -21,6 +23,7 @@ services:
       - "8080:80"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./static:/app/static:ro
     depends_on:
       - catalog-app
     networks:

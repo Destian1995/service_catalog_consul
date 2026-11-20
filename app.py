@@ -9,8 +9,9 @@ import json
 import logging
 import re
 import requests as http_requests
-from flask import Flask, jsonify, request, send_from_directory, session, redirect
-from flask_cors import CORS
+from flask import Flask, abort, jsonify, request, send_from_directory
+
+import auth
 
 # ── Logging ──
 logging.basicConfig(
@@ -23,7 +24,8 @@ log = logging.getLogger("app")
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "consul_manager_config.json")
 
 app = Flask(__name__, static_folder="static")
-CORS(app)
+# Вход через Keycloak и роли: читать может любой вошедший, менять — только администратор.
+auth.init_app(app)
 
 # ──────────────────────────────────────
 # Config management (cached in memory)
@@ -854,15 +856,13 @@ def admin_get_config():
         for dc in cluster.get("datacenters", []):
             if dc.get("token"):
                 dc["token"] = dc["token"][:8] + "****"
+    # Пароль админки и ключ сессий из старых конфигов больше не используются и не отдаются.
+    for legacy_key in ("admin_password", "secret_key"):
+        safe.get("app", {}).pop(legacy_key, None)
     return jsonify(safe)
 
 @app.route("/api/admin/config", methods=["POST"])
 def admin_save_config():
-    pwd = request.json.get("password", "")
-    cfg = load_config()
-    if pwd != cfg.get("app", {}).get("admin_password", "admin"):
-        return jsonify({"error": "Неверный пароль"}), 403
-
     new_cfg = request.json.get("config")
     if not new_cfg:
         return jsonify({"error": "Пустой конфиг"}), 400
@@ -877,20 +877,23 @@ def admin_save_config():
                 if i < len(old_dcs):
                     dc["token"] = old_dcs[i]["token"]
 
+    for legacy_key in ("admin_password", "secret_key"):
+        new_cfg.get("app", {}).pop(legacy_key, None)
     save_config(new_cfg)
+    _log_change("config_update", f"{len(new_cfg.get('clusters', {}))} clusters")
     return jsonify({"ok": True})
 
 @app.route("/api/admin/mode", methods=["POST"])
 def admin_set_mode():
-    pwd = request.json.get("password", "")
     cfg = load_config()
-    if pwd != cfg.get("app", {}).get("admin_password", "admin"):
-        return jsonify({"error": "Неверный пароль"}), 403
     new_mode = request.json.get("mode")
     if new_mode not in ("test", "live"):
         return jsonify({"error": "Режим должен быть test или live"}), 400
+    old_mode = cfg.get("mode", "test")
     cfg["mode"] = new_mode
     save_config(cfg)
+    if new_mode != old_mode:
+        _log_change("mode_change", f"{old_mode} → {new_mode}")
     return jsonify({"ok": True, "mode": new_mode})
 
 @app.route("/api/admin/debug-service/<service_name>")
@@ -976,25 +979,21 @@ def admin_test_connection():
 @app.route("/api/admin/cluster", methods=["POST"])
 def admin_add_cluster():
     """Add a new cluster to config."""
-    pwd = request.json.get("password", "")
     cfg = load_config()
-    if pwd != cfg.get("app", {}).get("admin_password", "admin"):
-        return jsonify({"error": "Неверный пароль"}), 403
     cluster = request.json.get("cluster")
     if not cluster or not cluster.get("name"):
         return jsonify({"error": "Укажите имя кластера"}), 400
     cfg.setdefault("clusters", {})[cluster["name"]] = cluster
     save_config(cfg)
+    _log_change("cluster_add", cluster["name"])
     return jsonify({"ok": True})
 
 @app.route("/api/admin/cluster/<cluster_id>", methods=["DELETE"])
 def admin_delete_cluster(cluster_id):
-    pwd = request.json.get("password", "")
     cfg = load_config()
-    if pwd != cfg.get("app", {}).get("admin_password", "admin"):
-        return jsonify({"error": "Неверный пароль"}), 403
     cfg.get("clusters", {}).pop(cluster_id, None)
     save_config(cfg)
+    _log_change("cluster_delete", cluster_id)
     return jsonify({"ok": True})
 
 @app.route("/api/admin/monitored-systems", methods=["GET"])
@@ -1005,18 +1004,16 @@ def admin_get_monitored_systems():
 @app.route("/api/admin/monitored-systems", methods=["POST"])
 def admin_set_monitored_systems():
     """Save list of IS names marked as fully monitored."""
-    pwd = request.json.get("password", "")
     cfg = load_config()
-    if pwd != cfg.get("app", {}).get("admin_password", "admin"):
-        return jsonify({"error": "Неверный пароль"}), 403
     systems = request.json.get("systems", [])
     cfg["monitored_systems"] = sorted(set(systems))
     save_config(cfg)
+    _log_change("monitored_systems_update", f"{len(cfg['monitored_systems'])} systems")
     return jsonify({"ok": True, "systems": cfg["monitored_systems"]})
 
 @app.route("/api/admin/toggle-monitored-system", methods=["POST"])
 def admin_toggle_monitored_system():
-    """Toggle a single IS in monitored list (no password for quick toggle)."""
+    """Toggle a single IS in monitored list."""
     system_name = request.json.get("system_name", "")
     if not system_name:
         return jsonify({"error": "system_name required"}), 400
@@ -1028,6 +1025,7 @@ def admin_toggle_monitored_system():
         monitored.add(system_name)
     cfg["monitored_systems"] = sorted(monitored)
     save_config(cfg)
+    _log_change("monitoring_toggle", f"{system_name}: {'ON' if system_name in monitored else 'OFF'}")
     return jsonify({"ok": True, "is_monitored": system_name in monitored,
                     "systems": cfg["monitored_systems"]})
 
@@ -1049,6 +1047,7 @@ def admin_toggle_excluded():
         excluded.add(system_name)
     cfg["excluded_systems"] = sorted(excluded)
     save_config(cfg)
+    _log_change("exclude_toggle", f"{system_name}: {'ON' if system_name in excluded else 'OFF'}")
     return jsonify({"ok": True, "is_excluded": system_name in excluded})
 
 # ──────────────────────────────────────
@@ -1265,26 +1264,9 @@ def _save_history(history):
 
 def _log_change(action, details=""):
     history = _load_history()
-    history.append({"time": _dt.now().isoformat(timespec="seconds"), "action": action, "details": details})
+    history.append({"time": _dt.now().isoformat(timespec="seconds"), "action": action, "details": details,
+                    "user": auth.current_login()})
     _save_history(history)
-
-# Hook into toggle endpoints to log changes
-_orig_toggle_mon = admin_toggle_monitored_system
-@app.route("/api/admin/toggle-monitored-system", methods=["POST"], endpoint="toggle_mon_logged")
-def _logged_toggle_mon():
-    resp = _orig_toggle_mon()
-    data = resp.get_json() if hasattr(resp, 'get_json') else {}
-    sn = request.json.get("system_name", "")
-    _log_change("monitoring_toggle", f"{sn}: {'ON' if data.get('is_monitored') else 'OFF'}")
-    return resp
-
-_orig_toggle_excl = admin_toggle_excluded
-@app.route("/api/admin/toggle-excluded-system", methods=["POST"], endpoint="toggle_excl_logged")
-def _logged_toggle_excl():
-    resp = _orig_toggle_excl()
-    sn = request.json.get("system_name", "")
-    _log_change("exclude_toggle", sn)
-    return resp
 
 @app.route("/api/history")
 def api_history():
@@ -1834,6 +1816,9 @@ def admin_page():
 
 @app.route("/<path:path>")
 def static_files(path):
+    # Страницы открываются только через свои маршруты: /admin проверяет роль администратора.
+    if path.lower().endswith((".html", ".htm")):
+        abort(404)
     return send_from_directory("static", path)
 
 

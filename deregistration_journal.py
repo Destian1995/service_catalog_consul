@@ -52,6 +52,13 @@ def _db():
             last_read TEXT, error TEXT
         );
     """)
+    # Журналы, созданные до входа через Keycloak, получают колонку с логином пользователя портала.
+    if "actor" not in {row["name"] for row in conn.execute("PRAGMA table_info(events)")}:
+        try:
+            conn.execute("ALTER TABLE events ADD COLUMN actor TEXT")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column" not in str(exc).lower():  # Другой воркер Gunicorn успел раньше.
+                raise
     try:
         with conn:
             yield conn
@@ -62,7 +69,7 @@ def _db():
 def _insert(conn, key, fields):
     columns = ["source", "request_id", "started_at", "completed_at", "method", "endpoint", "node_name",
                "service_id", "datacenter", "server", "peer_ip", "forwarded_for", "token_accessor",
-               "http_status", "outcome", "recorded_at"]
+               "http_status", "outcome", "recorded_at", "actor"]
     conn.execute(
         "INSERT INTO events (event_key," + ",".join(columns) + ") VALUES (" + ",".join("?" for _ in range(len(columns) + 1)) + ") "
         "ON CONFLICT(event_key) DO UPDATE SET " + ",".join(
@@ -75,20 +82,21 @@ def _insert(conn, key, fields):
 def _caller():
     from flask import has_request_context, request
     if not has_request_context():
-        return "", ""
+        return "", "", ""
     forwarded = []
     for item in request.headers.get("X-Forwarded-For", "").split(",")[:8]:
         try:
             forwarded.append(str(ipaddress.ip_address(item.strip())))
         except ValueError:
             pass
-    return _text(request.remote_addr), ", ".join(forwarded)
+    from auth import current_login  # Логин из сессии Keycloak; вне портала — пусто.
+    return _text(request.remote_addr), ", ".join(forwarded), _text(current_login(), 256)
 
 
 def begin_command(base_url, path, payload):
     """Persist the attempt BEFORE sending. DB failure prevents an unlogged send."""
     key = "portal:" + str(uuid.uuid4())
-    peer, forwarded = _caller()
+    peer, forwarded, actor = _caller()
     parsed = urlsplit(base_url)
     server = parsed.hostname or ""
     if parsed.port:
@@ -97,7 +105,8 @@ def begin_command(base_url, path, payload):
         _insert(conn, key, dict(source="portal", request_id=key, started_at=utcnow(), method="PUT",
                                endpoint="/v1" + path, node_name=_text(payload.get("Node")),
                                service_id=_text(payload.get("ServiceID")), datacenter=_text(payload.get("Datacenter")),
-                               server=server, peer_ip=peer, forwarded_for=forwarded, outcome="requested", recorded_at=utcnow()))
+                               server=server, peer_ip=peer, forwarded_for=forwarded, outcome="requested", recorded_at=utcnow(),
+                               actor=actor))
     return key
 
 
@@ -251,9 +260,10 @@ def journal_data(query="", source="", outcome="", before=0, limit=100, config=No
         args.append("%" + node.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
     if query:
         clauses.append("(" + " OR ".join(c + " LIKE ? ESCAPE '\\'" for c in
-                       ("node_name", "service_id", "datacenter", "server", "peer_ip", "token_accessor", "endpoint")) + ")")
+                       ("node_name", "service_id", "datacenter", "server", "peer_ip", "token_accessor", "endpoint",
+                        "actor")) + ")")
         term = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-        args.extend([term] * 7)
+        args.extend([term] * 8)
     for column, value in (("source", source), ("outcome", outcome)):
         if value:
             clauses.append(column + "=?"); args.append(value)

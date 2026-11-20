@@ -1,6 +1,8 @@
 import json
 import os
+import sqlite3
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -99,9 +101,12 @@ class JournalTests(unittest.TestCase):
             self.assertEqual(journal.journal_data()["events"][0]["outcome"], "transport_error")
 
     def test_api_and_page_without_contacting_consul(self):
-        with patch.dict(os.environ, CONSUL_AUDIT_FILES=""), patch("consul_client.start_cache_warmer"):
+        # Если портал ещё не загружен другим тестом, он запускается без входа; иначе входим читателем.
+        with patch.dict(os.environ, CONSUL_AUDIT_FILES="", AUTH_MODE="disabled"), patch("consul_client.start_cache_warmer"):
             import app as portal
             with portal.app.test_client() as client, patch.object(portal, "load_config", return_value={"mode": "test", "clusters": {}}):
+                with client.session_transaction() as state:
+                    state["user"] = {"login": "reader1", "name": "Reader", "is_admin": False, "exp": time.time() + 60}
                 response = client.get("/api/deregistrations")
                 self.assertEqual(response.status_code, 200)
                 self.assertFalse(response.json["coverage"]["audit_configured"])
@@ -136,6 +141,21 @@ class JournalTests(unittest.TestCase):
         self.assertEqual(result["coverage"]["proxy_destinations"], [])
         self.assertEqual(result["coverage"]["audit_patterns"], [str(self.root / "*.jsonl*")])
 
+
+    def test_journal_created_before_login_gets_actor_column(self):
+        db = self.root / "journal.db"
+        with sqlite3.connect(str(db)) as conn:
+            conn.execute("CREATE TABLE events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_key TEXT NOT NULL UNIQUE, "
+                         "source TEXT NOT NULL, request_id TEXT, started_at TEXT, completed_at TEXT, method TEXT, "
+                         "endpoint TEXT, node_name TEXT, service_id TEXT, datacenter TEXT, server TEXT, peer_ip TEXT, "
+                         "forwarded_for TEXT, token_accessor TEXT, http_status INTEGER, outcome TEXT, recorded_at TEXT)")
+            conn.execute("INSERT INTO events (event_key, source, node_name, outcome) VALUES ('old', 'portal', 'old101', 'http_ok')")
+        conn.close()
+        events = journal.journal_data()["events"]
+        self.assertEqual([(e["node_name"], e["actor"]) for e in events], [("old101", None)])
+        key = journal.begin_command("https://consul.example", "/catalog/deregister", {"Node": "new101"})
+        journal.finish_command(key, 200)
+        self.assertEqual(journal.journal_data(node="new101")["events"][0]["actor"], "")
 
     def test_node_filter_matches_node_not_service_or_unknown_target(self):
         for node in ("uknrd101.am-aton.local", "nrd101.moscow.aton.holding", "literal_percent%"):

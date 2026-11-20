@@ -220,6 +220,47 @@ body {
     color: var(--text-muted);
 }
 
+/* ─── Роли: действия изменения видны только администратору ─── */
+html:not(.role-admin) .admin-only {
+    display: none !important;
+}
+
+.user-badge {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 8px;
+    margin-bottom: 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.user-badge:empty {
+    display: none;
+}
+
+.user-badge-name {
+    color: var(--text-primary);
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+
+.user-badge-role {
+    flex: 1;
+}
+
+.user-badge-logout {
+    color: var(--text-muted);
+    text-decoration: none;
+}
+
+.user-badge-logout:hover {
+    color: var(--accent-light);
+}
+
 .status-dot {
     display: inline-block;
     width: 10px;

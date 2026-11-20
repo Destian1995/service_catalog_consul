@@ -18,6 +18,9 @@ async function api(path) {
 function $(sel) { return document.querySelector(sel); }
 function $$(sel) { return document.querySelectorAll(sel); }
 
+// Права проверяет сервер; здесь только скрываем действия, недоступные читателю.
+function isAdmin() { return !!(window.catalogAuth && window.catalogAuth.isAdmin()); }
+
 function getTagClass(tag) {
     const map = { web: 'tag-web', proxy: 'tag-web', api: 'tag-api', gateway: 'tag-api',
         auth: 'tag-api', security: 'tag-api', database: 'tag-database', sql: 'tag-database',
@@ -648,7 +651,7 @@ async function applyServerFilters() {
 
                                     <div class="expand-panel active" id="${rowId}-overview">
                                         <div style="margin-bottom:12px;text-align:right">
-                                            <button class="btn-export" style="background:var(--critical);color:#fff;border:none" onclick="event.stopPropagation(); deregisterNode('${node.Node}')">Дерегистрация</button>
+                                            <button class="btn-export admin-only" style="background:var(--critical);color:#fff;border:none" onclick="event.stopPropagation(); deregisterNode('${node.Node}')">Дерегистрация</button>
                                         </div>
                                         <div class="info-grid">
                                             <div class="info-card">
@@ -793,6 +796,7 @@ async function checkExportersAliveFor(rowId, host, exporters, prefix) {
 }
 
 async function deregisterNode(nodeName) {
+    if (!isAdmin()) return;
     if (!confirm(`Дерегистрировать узел «${nodeName}» из Consul? Это действие необратимо.`)) return;
     try {
         const resp = await fetch(`/api/nodes/${encodeURIComponent(nodeName)}/deregister`, {method: 'POST'});
@@ -1103,7 +1107,7 @@ async function renderMonitoring() {
                         <div class="system-card-info">
                             <div class="system-card-name" style="text-decoration:line-through;color:var(--text-muted)">${name}</div>
                         </div>
-                        <button class="btn-restore" onclick="toggleExcludeSystem('${name.replace(/'/g, "\\'")}')">
+                        <button class="btn-restore admin-only" onclick="toggleExcludeSystem('${name.replace(/'/g, "\\'")}')">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 119 9"/><polyline points="3 7 3 12 8 12"/></svg>
                             Вернуть
                         </button>
@@ -1138,7 +1142,7 @@ function renderMonitoringCards(systems, servicesBySystem) {
              data-dcs="${(info.datacenters || []).join(',')}"
              id="mon-card-${sysName.replace(/[^a-zA-Z0-9]/g, '_')}">
             <div class="system-card-header">
-                <label class="mon-toggle" onclick="event.stopPropagation()" title="Полный мониторинг (ручная отметка)">
+                <label class="mon-toggle admin-only" onclick="event.stopPropagation()" title="Полный мониторинг (ручная отметка)">
                     <input type="checkbox" ${isFull ? 'checked' : ''} onchange="toggleSystemMon('${sysName.replace(/'/g, "\\'")}', this.checked)">
                     <span class="mon-toggle-slider"></span>
                 </label>
@@ -1170,7 +1174,7 @@ function renderMonitoringCards(systems, servicesBySystem) {
                 </div>
                 ${svcs.length > 0 ? '<div class="system-detail-group"><span class="system-detail-label">Экспортеры</span><div class="system-detail-tags">' + svcs.map(s => '<span class="tag ' + getTagClass(s) + '">' + s + '</span>').join('') + '</div></div>' : ''}
                 <div style="margin-top:10px;text-align:right">
-                    <button class="btn-exclude" onclick="event.stopPropagation();toggleExcludeSystem('${sysName.replace(/'/g, "\\'")}')">
+                    <button class="btn-exclude admin-only" onclick="event.stopPropagation();toggleExcludeSystem('${sysName.replace(/'/g, "\\'")}')">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
                         Исключить
                     </button>
@@ -1181,6 +1185,7 @@ function renderMonitoringCards(systems, servicesBySystem) {
 }
 
 async function toggleSystemMon(sysName, isChecked) {
+    if (!isAdmin()) return;
     try {
         await fetch('/api/admin/toggle-monitored-system', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -1198,6 +1203,7 @@ async function toggleSystemMon(sysName, isChecked) {
 }
 
 async function toggleExcludeSystem(sysName) {
+    if (!isAdmin()) return;
     if (!confirm('Исключить ИС «' + sysName + '» из каталога? Её хосты не будут отображаться нигде.')) return;
     try {
         await fetch('/api/admin/toggle-excluded-system', {
@@ -1259,13 +1265,13 @@ async function renderArchitecture() {
         <div class="arch-toolbar">
             <span style="font-size:12px;color:var(--text-muted)">Колёсико — масштаб. Зажмите пустое место — панорама. Тяните блоки.</span>
             <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
-                <button class="btn-export" onclick="archAddIS()">+ ИС</button>
-                <button class="btn-export" id="archDeleteBtn" onclick="archDeleteIS()" disabled style="opacity:.4;cursor:not-allowed">− ИС</button>
-                <button class="btn-export" onclick="archAddLink()">+ Связь</button>
+                <button class="btn-export admin-only" onclick="archAddIS()">+ ИС</button>
+                <button class="btn-export admin-only" id="archDeleteBtn" onclick="archDeleteIS()" disabled style="opacity:.4;cursor:not-allowed">− ИС</button>
+                <button class="btn-export admin-only" onclick="archAddLink()">+ Связь</button>
                 <button class="btn-export" onclick="archZoom(1.2)">+</button>
                 <button class="btn-export" onclick="archZoom(0.8)">−</button>
                 <button class="btn-export" onclick="archFitAll()">Вписать</button>
-                <button class="btn-export" onclick="archSave()">
+                <button class="btn-export admin-only" onclick="archSave()">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/></svg>
                     Сохранить
                 </button>
@@ -1612,6 +1618,7 @@ function initArchRedraw() {
 }
 
 async function archSave() {
+    if (!isAdmin()) return;
     if (!_archState) return;
     const { nodeMap, links } = _archState;
     const nodes = Object.values(nodeMap).map(n => ({
@@ -1653,6 +1660,7 @@ function archShowModal(title, body, onConfirm) {
 }
 
 function archAddIS() {
+    if (!isAdmin()) return;
     archShowModal('Добавить ИС',
         `<div style="display:flex;flex-direction:column;gap:12px">
             <div>
@@ -1687,6 +1695,7 @@ function archAddIS() {
 }
 
 function archDeleteIS() {
+    if (!isAdmin()) return;
     if (!_archState) return;
     const sel = _archState.getSelected();
     if (!sel) return;
@@ -1701,6 +1710,7 @@ function archDeleteIS() {
 }
 
 function archAddLink() {
+    if (!isAdmin()) return;
     if (!_archState) return;
     const ids = Object.keys(_archState.nodeMap);
     if (ids.length < 2) { alert('Нужно минимум 2 ИС на схеме'); return; }
@@ -1804,7 +1814,8 @@ async function renderInventory() {
     const historyRows = (history || []).slice().reverse().slice(0, 30).map(h =>
         '<tr><td class="cell-mono" style="font-size:11px">' + h.time + '</td>' +
         '<td>' + h.action + '</td>' +
-        '<td class="cell-muted">' + (h.details || '') + '</td></tr>'
+        '<td class="cell-muted">' + (h.details || '') + '</td>' +
+        '<td class="cell-muted">' + (h.user || '—') + '</td></tr>'
     ).join('');
 
     // Comparison selects
@@ -1904,8 +1915,8 @@ async function renderInventory() {
         <div class="section-title">История изменений</div>
         <div class="table-wrapper">
             <table class="data-table" style="table-layout:auto">
-                <thead><tr><th style="width:160px">Время</th><th style="width:180px">Действие</th><th>Детали</th></tr></thead>
-                <tbody>${historyRows || '<tr><td colspan="3" class="cell-muted" style="text-align:center">Пока нет записей</td></tr>'}</tbody>
+                <thead><tr><th style="width:160px">Время</th><th style="width:180px">Действие</th><th>Детали</th><th style="width:160px">Пользователь</th></tr></thead>
+                <tbody>${historyRows || '<tr><td colspan="4" class="cell-muted" style="text-align:center">Пока нет записей</td></tr>'}</tbody>
             </table>
         </div>
     `;
@@ -2094,8 +2105,8 @@ async function renderOwnersMgmt() {
             <div class="arch-toolbar">
                 <span style="font-size:12px;color:var(--text-muted)">Назначение владельцев серверам. Синхронизация с Consul.</span>
                 <div style="margin-left:auto;display:flex;gap:8px">
-                    <button class="btn-export" onclick="ownerAdd()">+ Владелец</button>
-                    <button class="btn-export" onclick="ownerSave()">
+                    <button class="btn-export admin-only" onclick="ownerAdd()">+ Владелец</button>
+                    <button class="btn-export admin-only" onclick="ownerSave()">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/></svg>
                         Сохранить
                     </button>
@@ -2134,7 +2145,7 @@ async function renderOwnersMgmt() {
                     <td class="cell-name">${owner}</td>
                     <td>${summaryText}</td>
                     <td onclick="event.stopPropagation()">
-                        <div style="display:flex;gap:6px">
+                        <div class="admin-only" style="display:flex;gap:6px">
                             <select id="ownerSel-${owner.replace(/\s/g, '_')}" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);font-size:13px" onclick="event.stopPropagation()">
                                 <option value="">— выберите —</option>
                                 ${freeOpts}
@@ -2142,7 +2153,7 @@ async function renderOwnersMgmt() {
                             <button class="btn-export" style="padding:6px 14px;font-size:13px" onclick="event.stopPropagation(); ownerAssignServer('${owner}')">Добавить</button>
                         </div>
                     </td>
-                    <td onclick="event.stopPropagation()"><button class="btn-export" style="padding:6px 14px;font-size:13px;color:var(--critical);border-color:var(--critical)" onclick="event.stopPropagation(); ownerDelete('${owner}')" title="Удалить владельца">Удалить</button></td>
+                    <td onclick="event.stopPropagation()"><button class="btn-export admin-only" style="padding:6px 14px;font-size:13px;color:var(--critical);border-color:var(--critical)" onclick="event.stopPropagation(); ownerDelete('${owner}')" title="Удалить владельца">Удалить</button></td>
                 </tr>
                 <tr class="expand-content" id="${ownerRowId}">
                     <td colspan="5">
@@ -2160,10 +2171,10 @@ async function renderOwnersMgmt() {
                                             <td style="vertical-align:top;padding:10px 12px"><span class="badge badge-system">${sys}</span><br><span style="color:var(--text-muted);font-size:11px">${sorted.length} серв.</span></td>
                                             <td style="padding:10px 12px">
                                                 <div style="display:flex;flex-wrap:wrap;gap:6px 10px">
-                                                    ${sorted.slice(0, limit).map(s => `<span class="badge badge-dc" style="cursor:pointer;padding:5px 10px" title="Убрать" onclick="event.stopPropagation(); ownerRemoveServer('${owner}', '${s}')">${s} &times;</span>`).join('')}
+                                                    ${sorted.slice(0, limit).map(s => `<span class="badge badge-dc" style="${isAdmin() ? 'cursor:pointer;' : ''}padding:5px 10px" title="${isAdmin() ? 'Убрать' : ''}" onclick="event.stopPropagation(); ownerRemoveServer('${owner}', '${s}')">${s}${isAdmin() ? ' &times;' : ''}</span>`).join('')}
                                                 </div>
                                                 ${hasMore ? `<div id="${listId}-extra" style="display:none;flex-wrap:wrap;gap:6px 10px;margin-top:8px">
-                                                    ${sorted.slice(limit).map(s => `<span class="badge badge-dc" style="cursor:pointer;padding:5px 10px" title="Убрать" onclick="event.stopPropagation(); ownerRemoveServer('${owner}', '${s}')">${s} &times;</span>`).join('')}
+                                                    ${sorted.slice(limit).map(s => `<span class="badge badge-dc" style="${isAdmin() ? 'cursor:pointer;' : ''}padding:5px 10px" title="${isAdmin() ? 'Убрать' : ''}" onclick="event.stopPropagation(); ownerRemoveServer('${owner}', '${s}')">${s}${isAdmin() ? ' &times;' : ''}</span>`).join('')}
                                                 </div>
                                                 <button class="btn-export" style="padding:3px 12px;font-size:11px;margin-top:8px;width:fit-content" onclick="event.stopPropagation(); toggleOwnerServers('${listId}', this)">ещё ${sorted.length - limit} ▼</button>` : ''}
                                             </td>
@@ -2216,6 +2227,7 @@ function toggleOwnerRow(rowId, triggerRow) {
 }
 
 function ownerAdd() {
+    if (!isAdmin()) return;
     const name = prompt('Имя владельца:');
     if (!name || !name.trim()) return;
     const n = name.trim();
@@ -2225,12 +2237,14 @@ function ownerAdd() {
 }
 
 function ownerDelete(name) {
+    if (!isAdmin()) return;
     if (!confirm(`Удалить владельца «${name}» и отвязать все серверы?`)) return;
     delete _ownerData[name];
     window._ownersRender();
 }
 
 function ownerAssignServer(owner) {
+    if (!isAdmin()) return;
     const selId = `ownerSel-${owner.replace(/\s/g, '_')}`;
     const sel = document.getElementById(selId);
     if (!sel || !sel.value) return;
@@ -2239,11 +2253,13 @@ function ownerAssignServer(owner) {
 }
 
 function ownerRemoveServer(owner, server) {
+    if (!isAdmin()) return;
     _ownerData[owner] = (_ownerData[owner] || []).filter(s => s !== server);
     window._ownersRender();
 }
 
 async function ownerSave() {
+    if (!isAdmin()) return;
     const res = await fetch('/api/owner_assignments', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(_ownerData)
@@ -2644,6 +2660,10 @@ async function loadModeIndicator() {
 
 // ─── Инициализация ───
 document.addEventListener('DOMContentLoaded', () => {
-    navigate('dashboard');
-    loadModeIndicator();
+    // Сначала узнаём пользователя и роль, чтобы не показать читателю кнопки изменения.
+    const ready = window.catalogAuth ? window.catalogAuth.ready : Promise.resolve();
+    ready.finally(() => {
+        navigate('dashboard');
+        loadModeIndicator();
+    });
 });

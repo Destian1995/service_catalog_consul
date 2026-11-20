@@ -9,12 +9,14 @@
 - **Сервисы** — каталог с фильтрами, раскрывающиеся экземпляры с вложенной детализацией хостов
 - **Аналитика** — графики: покрытие мониторингом, разбивка по ИС, ДЦ, средам, ОС, командам
 - **Админка** — переключение тестовый/боевой режим, управление кластерами Consul, тест подключения
+- **Вход через Keycloak** — читать может любой вошедший в realm, менять данные — только роль `catalog-admin`
 
 ## Быстрый старт (Docker)
 
 ```bash
 git clone https://github.com/Destian1995/service_catalog_consul.git
 cd service_catalog_consul
+cp .env.example .env   # заполнить настройки Keycloak, см. «Вход и роли»
 docker compose up -d --build
 ```
 
@@ -44,19 +46,71 @@ docker compose up -d --build
     },
     "app": {
         "host": "0.0.0.0",
-        "port": 5000,
-        "secret_key": "change-me",
-        "admin_password": "admin"
+        "port": 5000
     }
 }
 ```
+
+Пароль админки и `secret_key` в этом файле больше не используются: права даёт роль в Keycloak,
+ключ сессий задаётся в `FLASK_SECRET_KEY`.
+
+## Вход и роли (Keycloak)
+
+Все страницы и API требуют входа через Keycloak (OpenID Connect, Authorization Code + PKCE).
+
+| Кто | Что может |
+|---|---|
+| Любой пользователь, вошедший в realm | Смотреть все разделы, выгружать CSV и inventory, проверять экспортеры, открывать журнал дерегистраций |
+| Клиентская роль `catalog-admin` | Дополнительно: админка, режим test/live, кластеры, дерегистрация узлов, владельцы, исключения и отметки ИС, правила SLA, карта архитектуры |
+
+Права проверяет сервер. Любой изменяющий запрос (POST, PUT, PATCH, DELETE) по умолчанию доступен только
+администратору, поэтому новый маршрут без доработки `auth.py` тоже будет закрыт для читателей.
+Исключения — `READ_ONLY_POST_ENDPOINTS` в `auth.py`: проверка доступности экспортеров.
+Изменяющий запрос с чужого сайта (заголовок `Origin` не совпадает с `PUBLIC_URL`) отклоняется.
+Читателю интерфейс не показывает кнопки изменения. В истории изменений и журнале дерегистраций
+сохраняется логин пользователя.
+
+### Клиент в Keycloak
+
+1. Clients → Create client: тип OpenID Connect, Client ID `service-catalog`.
+2. Capability config: Client authentication — On, Authentication flow — только Standard flow.
+3. Login settings: Valid redirect URIs — `https://<адрес портала>/auth/callback`,
+   Valid post logout redirect URIs — `https://<адрес портала>/`, Web origins — `https://<адрес портала>`.
+4. Advanced → Proof Key for Code Exchange Code Challenge Method — `S256`.
+5. Roles → Create role `catalog-admin`. Выдать её администраторам: Users или Groups → Role mapping →
+   Assign role → фильтр по клиентам → `service-catalog` `catalog-admin`. Удобнее через группу.
+6. Credentials → Client secret скопировать в `KEYCLOAK_CLIENT_SECRET`.
+
+Клиентская роль попадает в access token через стандартный client scope `roles`; убирать его из клиента нельзя.
+Роли читаются при входе. Выданная или отозванная роль начинает действовать при следующем входе,
+не позже чем через `SESSION_LIFETIME_HOURS`.
+
+### Переменные окружения
+
+Шаблон — `.env.example`. Файл `.env` в git и образ не попадает.
+
+| Переменная | Назначение |
+|---|---|
+| `AUTH_MODE` | `keycloak` (по умолчанию) или `disabled` — без входа, для локальной разработки |
+| `KEYCLOAK_ISSUER` | Адрес realm, например `https://keycloak-sbx.k8s.aton.global/realms/appsoft` |
+| `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_CLIENT_SECRET` | Клиент из шагов выше |
+| `KEYCLOAK_ADMIN_ROLE` | Клиентская роль администратора, по умолчанию `catalog-admin` |
+| `KEYCLOAK_CA_BUNDLE` | PEM корневого сертификата, которым подписан Keycloak. Цепочка `keycloak-sbx` заканчивается корпоративным корнем Security Administrator; он лежит в `certs/` и попадает в образ, путь — `/app/certs/aton-security-administrator-root-ca.crt` |
+| `PUBLIC_URL` | Внешний адрес портала без слэша в конце; из него строятся `/auth/callback` и адрес возврата после выхода |
+| `FLASK_SECRET_KEY` | Случайная строка от 32 символов, одинаковая для всех воркеров Gunicorn |
+| `SESSION_LIFETIME_HOURS` | Срок сессии портала, по умолчанию 8 |
+| `SESSION_COOKIE_SECURE` | `true` — cookie только по HTTPS. Если портал открыт по HTTP, браузер не сохранит такую cookie и вход зациклится; `false` допустим только для локальной проверки |
+
+Без полного набора переменных в режиме `keycloak` приложение не стартует и пишет, чего не хватает.
 
 ## Локальная разработка
 
 ```bash
 pip install -r requirements.txt
-python app.py
+AUTH_MODE=disabled python app.py
 ```
+
+`AUTH_MODE=disabled` отключает вход и даёт всем права администратора. В рабочем окружении его не включать.
 
 ## Стек
 
@@ -85,6 +139,7 @@ python app.py
 их HTTP-результат или ошибка соединения. Тестовый режим не отправляет команды и не создаёт фиктивные записи.
 Если запись попытки невозможна, отправка блокируется. При сбое после отправки результат может остаться неизвестным.
 IP соединения и X-Forwarded-For хранятся отдельно; forwarded-заголовок не подтверждает личность.
+Для команд портала сохраняется логин пользователя Keycloak, отправившего команду.
 
 ### Внешние команды: подключение HTTP-логов
 
@@ -135,6 +190,6 @@ HTTP 2xx — ответ на запрос, а не гарантия постоя
 такую запись не найдёт. Для расследования используйте также время, адрес, endpoint и ACL accessor ID.
 Секрет токена, тела запросов и исходные audit-документы не сохраняются.
 Записи портала и внешнего источника не объединяются эвристически и могут описывать один запрос.
-Доступ к странице и API наследует существующие правила доступа портала; публикуйте его за вашим контролем доступа.
+Страница и API журнала доступны любому вошедшему пользователю; дерегистрировать узлы может только администратор.
 
-Проверки: `python -m unittest test_deregistration_journal -v`.
+Проверки: `python -m unittest test_auth test_deregistration_journal -v` и `node test_deregistration_filters.js`.

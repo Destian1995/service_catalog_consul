@@ -46,10 +46,7 @@
         .toast { position:fixed; bottom:24px; right:24px; padding:12px 20px; border-radius:var(--radius-sm); font-size:13px; font-weight:500; z-index:999; animation:fadeIn 0.2s ease; }
         .toast-ok { background:var(--passing-bg); border:1px solid var(--passing-border); color:var(--passing); }
         .toast-err { background:var(--critical-bg); border:1px solid var(--critical-border); color:var(--critical); }
-
-        .pwd-overlay { position:fixed; top:0;left:0;right:0;bottom:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:200; }
-        .pwd-box { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:28px; width:360px; }
-        .pwd-box h3 { margin-bottom:16px; font-size:16px; }
+        .admin-header .user-badge { margin:0 0 0 auto; }
     </style>
 </head>
 <body>
@@ -60,6 +57,7 @@
                 На портал
             </a>
             <h1>Настройки подключения</h1>
+            <div class="user-badge" id="userBadge"></div>
         </div>
 
         <!-- Mode switch -->
@@ -141,24 +139,9 @@
         </div>
     </div>
 
-    <!-- Password modal -->
-    <div class="pwd-overlay" id="pwdModal" style="display:none">
-        <div class="pwd-box">
-            <h3>Введите пароль администратора</h3>
-            <div class="form-row">
-                <input class="form-input" id="adminPwd" type="password" placeholder="Пароль"
-                       onkeydown="if(event.key==='Enter')confirmPwd()">
-            </div>
-            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
-                <button class="btn btn-secondary" onclick="cancelPwd()">Отмена</button>
-                <button class="btn btn-primary" onclick="confirmPwd()">ОК</button>
-            </div>
-        </div>
-    </div>
-
+    <script src="/js/auth.js"></script>
     <script>
     let config = {};
-    let pendingAction = null;
 
     async function loadConfig() {
         const r = await fetch('/api/admin/config');
@@ -264,44 +247,21 @@
         }
     }
 
-    function saveAll() {
-        pendingAction = async (pwd) => {
-            // Save mode
-            await fetch('/api/admin/mode', {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({password: pwd, mode: config.mode})
-            });
-            // Save config
-            const r = await fetch('/api/admin/config', {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({password: pwd, config: config})
-            });
-            const data = await r.json();
-            if (data.error) { toast(data.error, 'err'); return; }
-            toast('Конфигурация сохранена');
-            loadConfig();
-        };
-        showPwd();
-    }
-
-    function showPwd() {
-        document.getElementById('pwdModal').style.display = 'flex';
-        document.getElementById('adminPwd').value = '';
-        document.getElementById('adminPwd').focus();
-    }
-
-    function cancelPwd() {
-        document.getElementById('pwdModal').style.display = 'none';
-        pendingAction = null;
-    }
-
-    async function confirmPwd() {
-        const pwd = document.getElementById('adminPwd').value;
-        document.getElementById('pwdModal').style.display = 'none';
-        if (pendingAction) {
-            await pendingAction(pwd);
-            pendingAction = null;
-        }
+    // Право сохранять проверяет сервер по роли администратора в Keycloak.
+    async function saveAll() {
+        const m = await fetch('/api/admin/mode', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({mode: config.mode})
+        });
+        if (!m.ok) { toast((await m.json()).error || 'Не удалось сохранить режим', 'err'); return; }
+        const r = await fetch('/api/admin/config', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({config: config})
+        });
+        const data = await r.json();
+        if (!r.ok || data.error) { toast(data.error || 'Не удалось сохранить конфигурацию', 'err'); return; }
+        toast('Конфигурация сохранена');
+        loadConfig();
     }
 
     function toast(msg, type = 'ok') {
