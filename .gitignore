@@ -7,3 +7,5 @@ consul-audit/
 .env
 
 /service_catalog_consul/
+
+/service_catalog_consul/
