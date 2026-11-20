@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qs, urlsplit
 
 import auth
+import user_roles
 
 ISSUER = "https://keycloak.test/realms/catalog"
 CLIENT_ID = "service-catalog"
@@ -22,7 +23,7 @@ KEYCLOAK_ENV = {
     "KEYCLOAK_ISSUER": ISSUER,
     "KEYCLOAK_CLIENT_ID": CLIENT_ID,
     "KEYCLOAK_CLIENT_SECRET": "client-secret",
-    "KEYCLOAK_ADMIN_ROLE": "catalog-admin",
+    "CATALOG_OWNER_SUB": "owner-1",
     "KEYCLOAK_CA_BUNDLE": "",
     "PUBLIC_URL": PUBLIC_URL,
     "FLASK_SECRET_KEY": "s" * 40,
@@ -42,10 +43,16 @@ METADATA = {
 REPO = Path(__file__).resolve().parent
 
 
-def login(client, admin):
+def login(client, admin=False, owner=False, subject=None, username=None):
+    settings = client.application.extensions["catalog_auth"]
+    subject = subject or (settings.owner_sub if owner else "admin-1" if admin else "reader-1")
+    username = username or ("owner1" if owner else "admin1" if admin else "reader1")
+    user_roles.record_login(settings.issuer, subject, username, "Тест")
+    user_roles.set_role(settings.issuer, subject, "admin" if admin and not owner else "user",
+                        {"sub": "test-setup", "login": "test-setup"})
     with client.session_transaction() as state:
-        state["user"] = {"login": "admin1" if admin else "reader1", "name": "Тест",
-                         "is_admin": admin, "exp": time.time() + 600}
+        state["user"] = {"issuer": settings.issuer, "sub": subject, "login": username,
+                         "name": "Тест", "exp": time.time() + 600}
         state["id_token"] = "id-token-value"
 
 
@@ -86,6 +93,7 @@ class PortalAccessTests(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         root = Path(cls.tmp.name)
+        cls.root = root
         cls.config_path = root / "config.json"
         shutil.copy(REPO / "consul_manager_config.json", cls.config_path)
         cls.env = patch.dict(os.environ, dict(KEYCLOAK_ENV, CONSUL_JOURNAL_DB=str(root / "journal.db")))
@@ -114,6 +122,9 @@ class PortalAccessTests(unittest.TestCase):
     def setUp(self):
         self.portal._config_cache["data"] = None
         self.client = self.portal.app.test_client()
+        self.roles_env = patch.dict(os.environ, {"CATALOG_USERS_DB": str(self.root / (self._testMethodName + ".sqlite3"))})
+        self.roles_env.start()
+        self.addCleanup(self.roles_env.stop)
 
     def config(self):
         return json.loads(self.config_path.read_text(encoding="utf-8"))
@@ -131,8 +142,9 @@ class PortalAccessTests(unittest.TestCase):
             location = urlsplit(response.headers["Location"])
             self.assertEqual(location.path, "/auth/login")
             self.assertEqual(parse_qs(location.query)["next"], [next_path])
-        self.assertEqual(self.client.get("/css/style.css").status_code, 200)
-        self.assertEqual(self.client.get("/static/js/auth.js").status_code, 200)
+        for path in ("/css/style.css", "/static/js/auth.js"):
+            with self.client.get(path) as response:
+                self.assertEqual(response.status_code, 200)
 
     def test_reader_reads_but_cannot_change(self):
         login(self.client, admin=False)
@@ -161,12 +173,12 @@ class PortalAccessTests(unittest.TestCase):
             with self.subTest(path=path):
                 response = getattr(self.client, method)(path, json=body)
                 self.assertEqual(response.status_code, 403)
-                self.assertIn("catalog-admin", response.json["error"])
+                self.assertIn("администратор", response.json["error"])
         for path in ("/api/admin/config", "/api/admin/diagnose", "/api/admin/debug-service/x"):
             self.assertEqual(self.client.get(path).status_code, 403, path)
         page = self.client.get("/admin")
         self.assertEqual(page.status_code, 403)
-        self.assertIn("catalog-admin", page.get_data(as_text=True))
+        self.assertIn("администратор", page.get_data(as_text=True))
         self.assertEqual(self.config(), before)
 
     def test_every_write_route_is_admin_only_by_default(self):
@@ -225,7 +237,7 @@ class PortalAccessTests(unittest.TestCase):
                                    headers={"Origin": "https://evil.test"})
         self.assertEqual(hostile.status_code, 403)
         self.assertNotIn("ERP", self.config().get("excluded_systems", []))
-        for origin in ("null", "https://catalog.test.evil.test"):
+        for origin in ("null", "https://catalog.test.evil.test", "http://catalog.test"):
             response = self.client.post("/api/nodes/x/deregister", headers={"Origin": origin})
             self.assertEqual(response.status_code, 403, origin)
         same = self.client.post("/api/admin/toggle-monitored-system", json={"system_name": "ERP"},
@@ -240,7 +252,7 @@ class PortalAccessTests(unittest.TestCase):
 
     def test_html_files_open_only_through_their_routes(self):
         login(self.client, admin=False)
-        for path in ("/admin.html", "/index.html", "/deregistrations.html"):
+        for path in ("/admin.html", "/index.html", "/deregistrations.html", "/users.html", "/static/admin.html", "/static/users.html"):
             self.assertEqual(self.client.get(path).status_code, 404, path)
 
     def test_live_deregistration_records_portal_user(self):
@@ -261,6 +273,102 @@ class PortalAccessTests(unittest.TestCase):
             self.assertEqual(journal_data(query="admin1")["events"][0]["node_name"], "uknrd101")
         finally:
             self.write_config(cfg)
+
+    def test_only_owner_can_list_users_and_change_roles(self):
+        login(self.client, admin=True)
+        for path in ("/users", "/api/admin/users"):
+            self.assertEqual(self.client.get(path).status_code, 403, path)
+        self.assertEqual(self.client.put("/api/admin/users/reader-1/role", json={"role": "admin"}).status_code, 403)
+        login(self.client, admin=False)
+        self.assertEqual(self.client.get("/api/admin/users").status_code, 403)
+        self.assertEqual(self.client.put("/api/admin/users/reader-1/role", json={"role": "admin"}).status_code, 403)
+        login(self.client, owner=True)
+        with self.client.get("/users") as page:
+            self.assertEqual(page.status_code, 200)
+        response = self.client.get("/api/admin/users")
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        listed = {item["subject"]: item for item in response.json["users"]}
+        self.assertEqual(listed["reader-1"]["role"], "user")
+        self.assertEqual(listed["owner-1"]["role"], "admin")
+        self.assertTrue(listed["owner-1"]["is_owner"])
+        self.assertTrue(self.client.get("/api/me").json["can_manage_users"])
+
+    def test_grant_and_revoke_apply_to_existing_session_and_persist(self):
+        reader = self.portal.app.test_client()
+        login(reader)
+        login(self.client, owner=True)
+        self.assertEqual(reader.post("/api/nodes/x/deregister").status_code, 403)
+        response = self.client.put("/api/admin/users/reader-1/role", json={"role": "admin"})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(reader.get("/api/me").json["is_admin"])
+        self.assertFalse(reader.get("/api/me").json["can_manage_users"])
+        self.assertEqual(reader.post("/api/nodes/x/deregister").status_code, 200)
+        self.assertEqual(reader.put("/api/admin/users/admin-1/role", json={"role": "admin"}).status_code, 403)
+        user_roles.record_login(ISSUER, "reader-1", "renamed", "Новое имя")
+        self.assertEqual(user_roles.get_user(ISSUER, "reader-1")["role"], "admin")
+        self.assertEqual(self.client.put("/api/admin/users/reader-1/role", json={"role": "user"}).status_code, 200)
+        self.assertFalse(reader.get("/api/me").json["is_admin"])
+        self.assertEqual(reader.post("/api/nodes/x/deregister").status_code, 403)
+        self.assertEqual(user_roles.get_user(ISSUER, "reader-1")["role"], "user")
+        import sqlite3
+        with sqlite3.connect(os.environ["CATALOG_USERS_DB"]) as db:
+            events = db.execute("SELECT actor_subject, old_role, new_role FROM role_events WHERE actor_subject='owner-1' ORDER BY id").fetchall()
+        self.assertEqual(events, [("owner-1", "user", "admin"), ("owner-1", "admin", "user")])
+
+    def test_owner_identity_cannot_be_impersonated_by_login_or_session_role(self):
+        login(self.client, username="owner1")
+        with self.client.session_transaction() as state:
+            state["user"]["is_admin"] = True
+            state["user"]["can_manage_users"] = True
+            state.modified = True
+        me = self.client.get("/api/me").json
+        self.assertFalse(me["is_admin"])
+        self.assertFalse(me["can_manage_users"])
+        self.assertEqual(self.client.get("/api/admin/users").status_code, 403)
+
+    def test_role_changes_validate_target_and_cannot_demote_owner(self):
+        login(self.client, owner=True)
+        self.assertEqual(self.client.put("/api/admin/users/owner-1/role", json={"role": "user"}).status_code, 409)
+        self.assertEqual(self.client.put("/api/admin/users/missing/role", json={"role": "admin"}).status_code, 404)
+        for body in ({"role": "owner"}, {"role": True}, {}, [], None):
+            with self.subTest(body=body):
+                response = self.client.put("/api/admin/users/reader-1/role", json=body,
+                                           content_type="application/json")
+                self.assertEqual(response.status_code, 400)
+        self.assertTrue(self.client.get("/api/me").json["can_manage_users"])
+        self.assertEqual(self.client.put("/api/admin/users/reader-1/role", json={"role": "admin"},
+                                        headers={"Origin": "https://evil.test"}).status_code, 403)
+
+    def test_issuer_is_part_of_identity_and_user_list_is_scoped(self):
+        login(self.client, owner=True)
+        user_roles.record_login("https://other.test/realms/catalog", "other-user", "other", "Other")
+        users = self.client.get("/api/admin/users").json["users"]
+        self.assertNotIn("other-user", [user["subject"] for user in users])
+        with self.client.session_transaction() as state:
+            state["user"]["issuer"] = "https://other.test/realms/catalog"
+            state.modified = True
+        self.assertEqual(self.client.get("/api/me").status_code, 401)
+
+    def test_missing_owner_configuration_does_not_elevate_first_login(self):
+        with patch.object(self.settings, "owner_sub", ""):
+            self.complete_login()
+            me = self.client.get("/api/me").json
+            self.assertEqual(me["sub"], "u-1")
+            self.assertFalse(me["is_admin"])
+            self.assertFalse(me["can_manage_users"])
+
+    def test_owner_is_admin_without_any_keycloak_admin_role(self):
+        with patch.object(self.settings, "owner_sub", "u-1"):
+            self.assertEqual(self.complete_login({"resource_access": {}}).status_code, 302)
+            me = self.client.get("/api/me").json
+            self.assertTrue(me["is_admin"])
+            self.assertTrue(me["can_manage_users"])
+            self.assertEqual(self.client.get("/api/admin/users").status_code, 200)
+
+    def test_legacy_cookie_requires_reauthentication(self):
+        with self.client.session_transaction() as state:
+            state["user"] = {"login": "admin1", "is_admin": True, "exp": time.time() + 600}
+        self.assertEqual(self.client.get("/api/me").status_code, 401)
 
     # ── Вход через Keycloak ──
 
@@ -305,11 +413,11 @@ class PortalAccessTests(unittest.TestCase):
                 patch.object(client, "fetch_access_token", return_value=token):
             return self.client.get("/auth/callback", query_string={"code": "code-1", "state": query["state"][0]})
 
-    def test_callback_logs_in_admin_from_client_role(self):
+    def test_callback_client_role_does_not_grant_portal_admin(self):
         response = self.complete_login()
         self.assertEqual((response.status_code, response.headers["Location"]), (302, "/admin"))
         me = self.client.get("/api/me").json
-        self.assertEqual((me["login"], me["name"], me["is_admin"]), ("admin1", "Администратор Каталога", True))
+        self.assertEqual((me["login"], me["name"], me["is_admin"]), ("admin1", "Администратор Каталога", False))
         cookie = response.headers["Set-Cookie"]
         for flag in ("HttpOnly", "Secure", "SameSite=Lax"):
             self.assertIn(flag, cookie)
@@ -324,7 +432,7 @@ class PortalAccessTests(unittest.TestCase):
         from authlib.jose import JsonWebKey
         forged_key = JsonWebKey.generate_key("RSA", 2048, is_private=True, options={"kid": "k1"})
         for overrides, signer in (({"azp": "other-client"}, None), ({"iss": "https://evil.test/realms/catalog"}, None),
-                                  ({"exp": int(time.time()) - 3600}, None), ({}, forged_key)):
+                                  ({"exp": int(time.time()) - 3600}, None), ({"sub": "different-user"}, None), ({"sub": ""}, None), ({}, forged_key)):
             with self.subTest(overrides=overrides, forged=signer is not None):
                 self.client = self.portal.app.test_client()
                 response = self.complete_login(overrides, sign_with=signer)

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Пользователи · Каталог сервисов</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    body { display:block; height:auto; overflow:auto; }
+    .users-page { max-width:1100px; margin:40px auto; padding:0 24px; }
+    .users-header { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+    .users-note { color:var(--text-secondary); margin:12px 0 24px; line-height:1.6; }
+    .users-toolbar { display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
+    .users-toolbar input { flex:1; min-width:180px; }
+    #usersStatus { min-height:24px; margin-bottom:12px; color:var(--text-secondary); }
+    #usersStatus[data-error="true"] { color:var(--critical); }
+    .users-id { display:block; color:var(--text-muted); font-size:11px; overflow-wrap:anywhere; max-width:320px; }
+    .users-table-wrap { overflow-x:auto; }
+    .users-header a { color:var(--accent-light); }
+  </style>
+</head>
+<body>
+  <main class="users-page" id="usersPage" hidden>
+    <header class="users-header"><h1>Пользователи</h1><a href="/">← В каталог</a></header>
+    <p class="users-note">Новые пользователи получают только просмотр. Здесь показаны те, кто уже вошёл в каталог.
+      Выдавать и отзывать права администратора может только владелец каталога. Изменения действуют со следующего запроса.</p>
+    <div class="users-toolbar">
+      <input class="filter-search" id="usersSearch" type="search" aria-label="Поиск пользователя" placeholder="Имя или логин">
+      <button class="btn-export" id="usersRefresh" type="button">Обновить</button>
+    </div>
+    <div id="usersStatus" role="status" aria-live="polite"></div>
+    <div class="users-table-wrap"><table class="data-table">
+      <thead><tr><th>Пользователь</th><th>Логин / ID Keycloak</th><th>Роль</th><th>Последний вход</th><th>Действие</th></tr></thead>
+      <tbody id="usersRows"></tbody>
+    </table></div>
+  </main>
+  <script src="/js/auth.js"></script>
+  <script src="/js/users.js"></script>
+</body>
+</html>

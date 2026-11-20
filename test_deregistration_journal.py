@@ -101,12 +101,12 @@ class JournalTests(unittest.TestCase):
             self.assertEqual(journal.journal_data()["events"][0]["outcome"], "transport_error")
 
     def test_api_and_page_without_contacting_consul(self):
-        # Если портал ещё не загружен другим тестом, он запускается без входа; иначе входим читателем.
+        # Проверяем журнал с читательской сессией независимо от порядка запуска тестов.
         with patch.dict(os.environ, CONSUL_AUDIT_FILES="", AUTH_MODE="disabled"), patch("consul_client.start_cache_warmer"):
             import app as portal
-            with portal.app.test_client() as client, patch.object(portal, "load_config", return_value={"mode": "test", "clusters": {}}):
-                with client.session_transaction() as state:
-                    state["user"] = {"login": "reader1", "name": "Reader", "is_admin": False, "exp": time.time() + 60}
+            with portal.app.test_client() as client, \
+                    patch.object(portal, "load_config", return_value={"mode": "test", "clusters": {}}), \
+                    patch("auth.current_user", return_value={"login": "reader1", "name": "Reader", "is_admin": False}):
                 response = client.get("/api/deregistrations")
                 self.assertEqual(response.status_code, 200)
                 self.assertFalse(response.json["coverage"]["audit_configured"])

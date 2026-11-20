@@ -10,6 +10,7 @@ services:
       - catalog-journal:/app/data
     environment:
       CONSUL_JOURNAL_DB: /app/data/deregistrations.sqlite3
+      CATALOG_USERS_DB: /app/data/catalog-users.sqlite3
       # To import external HTTP requests, mount Consul Enterprise audit logs read-only
       # and set CONSUL_AUDIT_FILES, for example '["/audit/*.jsonl*"]'.
     networks:

@@ -1529,7 +1529,7 @@ function initArchCanvas(nodes, links) {
         const rect = canvas.getBoundingClientRect();
         const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
         const n = findNode(sx, sy);
-        if (n) {
+        if (n && isAdmin()) {
             dragNode = n;
             const w = toWorld(sx, sy);
             mouseOff = { x: w.x - n.x, y: w.y - n.y };
@@ -1554,7 +1554,7 @@ function initArchCanvas(nodes, links) {
         } else {
             const prev = hoverNode;
             hoverNode = findNode(sx, sy);
-            canvas.style.cursor = hoverNode ? 'grab' : 'default';
+            canvas.style.cursor = hoverNode ? (isAdmin() ? 'grab' : 'pointer') : 'default';
             if (prev !== hoverNode) draw();
         }
     });
@@ -1568,7 +1568,7 @@ function initArchCanvas(nodes, links) {
             selectedNode = null; updateDeleteBtn(); draw();
         }
         dragNode = null; panning = false;
-        canvas.style.cursor = hoverNode ? 'grab' : 'default';
+        canvas.style.cursor = hoverNode ? (isAdmin() ? 'grab' : 'pointer') : 'default';
     });
     canvas.addEventListener('mouseleave', () => { dragNode = null; panning = false; hoverNode = null; draw(); });
     canvas.addEventListener('wheel', e => {
@@ -2667,3 +2667,5 @@ document.addEventListener('DOMContentLoaded', () => {
         loadModeIndicator();
     });
 });
+
+window.addEventListener('catalog-permissions-changed', () => navigate(currentView));

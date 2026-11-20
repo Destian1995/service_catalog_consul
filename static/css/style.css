@@ -2437,3 +2437,6 @@ select option {
         grid-template-columns: 1fr;
     }
 }
+
+/* Permission management is reserved for the configured catalog owner. */
+html:not(.can-manage-users) .owner-only { display:none !important; }
